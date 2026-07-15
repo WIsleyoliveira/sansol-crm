@@ -1,9 +1,12 @@
+import { redirect } from "next/navigation";
+import { can } from "@/lib/policy";
 import { desc, eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
 
 export default async function ContatosPage() {
   const user = await requireUser();
+  if (!can(user.role, "view_pipeline")) redirect("/projetos");
   const rows = await db.select({
     contact: s.contacts,
     companyName: s.companies.name,

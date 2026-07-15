@@ -1,20 +1,23 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
+import { can } from "@/lib/policy";
 import { logout } from "@/app/actions";
 
-const nav = [
-  { href: "/", label: "Dashboard", icon: "📊" },
-  { href: "/pipeline", label: "Pipeline de Vendas", icon: "🎯" },
-  { href: "/projetos", label: "Projetos / Instalação", icon: "🔧" },
-  { href: "/empresas", label: "Empresas", icon: "🏢" },
-  { href: "/contatos", label: "Contatos", icon: "👥" },
-  { href: "/tarefas", label: "Tarefas", icon: "✅" },
+const allNav = [
+  { href: "/", label: "Dashboard", icon: "📊", needs: "view_pipeline" },
+  { href: "/pipeline", label: "Pipeline de Vendas", icon: "🎯", needs: "view_pipeline" },
+  { href: "/projetos", label: "Projetos / Instalação", icon: "🔧", needs: "view_installs" },
+  { href: "/empresas", label: "Empresas", icon: "🏢", needs: "view_pipeline" },
+  { href: "/contatos", label: "Contatos", icon: "👥", needs: "view_pipeline" },
+  { href: "/tarefas", label: "Tarefas", icon: "✅", needs: "view_installs" },
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+
+  const nav = allNav.filter((n) => can(user.role, n.needs));
 
   return (
     <div className="flex min-h-screen bg-zinc-50">

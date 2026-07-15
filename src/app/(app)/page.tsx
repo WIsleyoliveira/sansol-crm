@@ -1,11 +1,16 @@
+import { redirect } from "next/navigation";
+import { can } from "@/lib/policy";
 import Link from "next/link";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { brl, dateBR, daysSince, relTime } from "@/lib/format";
+import { AiButton } from "@/components/AiButton";
+import { aiAnalyzePipeline } from "@/app/actions-ai";
 
 export default async function DashboardPage() {
   const user = await requireUser();
+  if (!can(user.role, "view_pipeline")) redirect("/projetos");
   const ws = eq(s.opportunities.workspaceId, user.workspaceId);
 
   const opps = await db.select({
@@ -53,9 +58,16 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-zinc-900">Bom dia, {user.name.split(" ")[0]} ☀️</h1>
-        <p className="text-sm text-zinc-500">Visão geral da operação Sansol</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-zinc-900">Bom dia, {user.name.split(" ")[0]} ☀️</h1>
+          <p className="text-sm text-zinc-500">Visão geral da operação Sansol</p>
+        </div>
+        <AiButton
+          action={aiAnalyzePipeline}
+          label="Analisar funil com IA"
+          busyLabel="Analisando negócios parados…"
+        />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

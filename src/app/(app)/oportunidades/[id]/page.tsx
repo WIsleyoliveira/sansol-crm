@@ -2,7 +2,11 @@ import { notFound } from "next/navigation";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/policy";
 import { addNote } from "@/app/actions";
+import { createProposal } from "@/app/actions-create";
+import { aiGenerateProposal } from "@/app/actions-ai";
+import { AiButton } from "@/components/AiButton";
 import { brl, dateBR, daysSince, kwp, relTime } from "@/lib/format";
 
 export default async function OportunidadePage({ params }: { params: Promise<{ id: string }> }) {
@@ -56,9 +60,16 @@ export default async function OportunidadePage({ params }: { params: Promise<{ i
     pending: "Pendente", viable: "Viável ✓", not_viable: "Inviável", needs_reinforcement: "Requer reforço estrutural",
   };
 
+  const showFinancials = can(user.role, "view_financials");
+
   async function addNoteAction(formData: FormData) {
     "use server";
     await addNote(id, String(formData.get("text") ?? ""));
+  }
+
+  async function aiProposalAction() {
+    "use server";
+    return aiGenerateProposal(id);
   }
 
   return (
@@ -78,8 +89,8 @@ export default async function OportunidadePage({ params }: { params: Promise<{ i
           )}
         </div>
         <div className="text-right">
-          <div className="text-2xl font-bold text-emerald-700">{brl(opp.amount)}</div>
-          <div className="text-sm text-zinc-500">{kwp(opp.systemSizeKwp)} · fecha {dateBR(opp.expectedCloseDate)}</div>
+          {showFinancials && <div className="text-2xl font-bold text-emerald-700">{brl(opp.amount)}</div>}
+          <div className="text-sm text-zinc-500">{kwp(opp.systemSizeKwp)}{showFinancials ? ` · fecha ${dateBR(opp.expectedCloseDate)}` : ""}</div>
         </div>
       </div>
 
@@ -146,9 +157,10 @@ export default async function OportunidadePage({ params }: { params: Promise<{ i
             </div>
           )}
 
-          {props.length > 0 && (
+          {showFinancials && (
             <div className="rounded-xl bg-white border border-zinc-200 p-4">
               <div className="font-semibold text-sm text-zinc-700 mb-2">📄 Propostas</div>
+              {props.length === 0 && <p className="text-xs text-zinc-400 mb-3">Nenhuma proposta ainda.</p>}
               {props.map((p) => (
                 <div key={p.id} className="rounded-lg border border-zinc-100 p-3 text-xs space-y-1 mb-2">
                   <div className="flex justify-between">
@@ -166,6 +178,47 @@ export default async function OportunidadePage({ params }: { params: Promise<{ i
                   </div>
                 </div>
               ))}
+
+              {opp.status === "open" && (
+                <div className="mt-3 space-y-3">
+                  <AiButton
+                    action={aiProposalAction}
+                    label="Gerar proposta com IA"
+                    busyLabel="Dimensionando sistema…"
+                  />
+                  <details className="rounded-lg border border-zinc-100">
+                    <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50">
+                      + Nova proposta manual
+                    </summary>
+                    <form action={createProposal} className="p-3 space-y-2 text-xs">
+                      <input type="hidden" name="opportunityId" value={id} />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input name="systemSizeKwp" required placeholder="kWp *" type="number" step="0.01" min="0"
+                          className="rounded border border-zinc-200 px-2 py-1.5" />
+                        <input name="totalPrice" required placeholder="Preço total R$ *" type="number" step="0.01" min="0"
+                          className="rounded border border-zinc-200 px-2 py-1.5" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input name="panelModel" placeholder="Modelo do painel" className="rounded border border-zinc-200 px-2 py-1.5" />
+                        <input name="panelQty" placeholder="Qtd. painéis" type="number" min="0" className="rounded border border-zinc-200 px-2 py-1.5" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input name="inverterModel" placeholder="Inversor" className="rounded border border-zinc-200 px-2 py-1.5" />
+                        <input name="paybackYears" placeholder="Payback (anos)" type="number" step="0.1" min="0" className="rounded border border-zinc-200 px-2 py-1.5" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <select name="financingType" className="rounded border border-zinc-200 bg-white px-2 py-1.5">
+                          <option value="cash">À vista</option>
+                          <option value="financing">Financiamento</option>
+                          <option value="leasing">Leasing</option>
+                        </select>
+                        <input name="installments" placeholder="Parcelas" type="number" min="1" className="rounded border border-zinc-200 px-2 py-1.5" />
+                      </div>
+                      <button className="w-full rounded bg-zinc-900 text-white py-1.5 hover:bg-zinc-700">Criar proposta</button>
+                    </form>
+                  </details>
+                </div>
+              )}
             </div>
           )}
 

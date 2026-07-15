@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { can } from "@/lib/policy";
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
@@ -7,6 +9,7 @@ import { brl, daysSince } from "@/lib/format";
 
 export default async function PipelinePage() {
   const user = await requireUser();
+  if (!can(user.role, "view_pipeline")) redirect("/projetos");
 
   const [pipe] = await db.select().from(s.pipelines)
     .where(and(eq(s.pipelines.workspaceId, user.workspaceId), eq(s.pipelines.kind, "sales")));
@@ -64,9 +67,15 @@ export default async function PipelinePage() {
           <h1 className="text-xl font-bold text-zinc-900">Pipeline de Vendas</h1>
           <p className="text-sm text-zinc-500">Arraste os cards para mudar de etapa · ⚠ indica SLA estourado</p>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-zinc-400 uppercase">Em aberto</div>
-          <div className="text-lg font-bold text-emerald-700">{brl(openTotal)}</div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <div className="text-xs text-zinc-400 uppercase">Em aberto</div>
+            <div className="text-lg font-bold text-emerald-700">{brl(openTotal)}</div>
+          </div>
+          <a href="/oportunidades/nova"
+            className="rounded-lg bg-zinc-900 text-white text-sm px-4 py-2 hover:bg-zinc-700">
+            + Nova oportunidade
+          </a>
         </div>
       </div>
       <Kanban columns={columns} moveAction={move} />
