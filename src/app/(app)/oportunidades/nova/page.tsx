@@ -12,13 +12,13 @@ export default async function NovaOportunidadePage() {
   const companies = await db.select().from(s.companies)
     .where(eq(s.companies.workspaceId, user.workspaceId));
 
-  const input = "w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:border-amber-400";
+  const input = "w-full rounded-xl border border-zinc-200 px-3.5 py-2.5 text-sm focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100";
   const label = "block text-xs font-medium text-zinc-500 mb-1";
 
   return (
-    <div className="p-6 max-w-xl">
-      <h1 className="text-xl font-bold text-zinc-900 mb-5">Nova oportunidade</h1>
-      <form action={createOpportunity} className="space-y-4 rounded-xl bg-white border border-zinc-200 p-5">
+    <div className="p-8 max-w-xl">
+      <h1 className="text-2xl font-bold text-zinc-900 tracking-tight mb-6">Nova oportunidade</h1>
+      <form action={createOpportunity} className="space-y-4 rounded-2xl bg-white border border-zinc-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-6">
         <div>
           <label className={label}>Nome do negócio *</label>
           <input name="name" required placeholder="Ex.: Mercado Central — 40 kWp" className={input} />
@@ -57,7 +57,7 @@ export default async function NovaOportunidadePage() {
             <input name="expectedCloseDate" type="date" className={input} />
           </div>
         </div>
-        <button className="rounded-lg bg-zinc-900 text-white text-sm px-5 py-2.5 hover:bg-zinc-700">
+        <button className="rounded-xl bg-zinc-900 text-white text-[13px] font-semibold px-6 py-2.5 hover:bg-zinc-700 shadow-sm transition-colors">
           Criar oportunidade
         </button>
       </form>

@@ -45,7 +45,6 @@ export default async function ProjetosPage() {
         badge: p.systemSizeKwp ? kwp(p.systemSizeKwp) : undefined,
         daysInStage: daysSince(p.proj.stageEnteredAt),
         slaDays: st.slaDays,
-        ownerInitials: undefined,
       })),
   }));
 
@@ -55,11 +54,11 @@ export default async function ProjetosPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-5">
-        <h1 className="text-xl font-bold text-zinc-900">Projetos / Instalação</h1>
-        <p className="text-sm text-zinc-500">
-          Pós-venda: da homologação na concessionária até o sistema ligado. ⚠ indica prazo estourado (gargalo típico: concessionária).
+    <div className="p-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Projetos / Instalação</h1>
+        <p className="text-sm text-zinc-500 mt-0.5">
+          Pós-venda: da homologação na concessionária até o sistema ligado. Borda vermelha indica prazo estourado.
         </p>
       </div>
       <Kanban columns={columns} moveAction={move} />

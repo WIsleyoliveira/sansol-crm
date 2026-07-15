@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
-import { can } from "@/lib/policy";
+import Link from "next/link";
 import { and, asc, eq } from "drizzle-orm";
+import { Plus } from "lucide-react";
+import { can } from "@/lib/policy";
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { moveOpportunityStage } from "@/app/actions";
@@ -61,21 +63,21 @@ export default async function PipelinePage() {
     .reduce((acc, o) => acc + parseFloat(o.opp.amount ?? "0"), 0);
 
   return (
-    <div className="p-6">
-      <div className="flex items-baseline justify-between mb-5">
+    <div className="p-8">
+      <div className="flex items-end justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-zinc-900">Pipeline de Vendas</h1>
-          <p className="text-sm text-zinc-500">Arraste os cards para mudar de etapa · ⚠ indica SLA estourado</p>
+          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Pipeline de Vendas</h1>
+          <p className="text-sm text-zinc-500 mt-0.5">Arraste os cards para mudar de etapa · borda vermelha indica SLA estourado</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-5">
           <div className="text-right">
-            <div className="text-xs text-zinc-400 uppercase">Em aberto</div>
-            <div className="text-lg font-bold text-emerald-700">{brl(openTotal)}</div>
+            <div className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">Em aberto</div>
+            <div className="text-lg font-bold text-emerald-700 tabular-nums">{brl(openTotal)}</div>
           </div>
-          <a href="/oportunidades/nova"
-            className="rounded-lg bg-zinc-900 text-white text-sm px-4 py-2 hover:bg-zinc-700">
-            + Nova oportunidade
-          </a>
+          <Link href="/oportunidades/nova"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 text-white text-[13px] font-semibold px-4 py-2.5 hover:bg-zinc-700 shadow-sm transition-colors">
+            <Plus className="h-4 w-4" /> Nova oportunidade
+          </Link>
         </div>
       </div>
       <Kanban columns={columns} moveAction={move} />
