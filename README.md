@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sansol CRM ☀️
 
-## Getting Started
+CRM vertical para venda e instalação de energia solar — do lead ao sistema ligado.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router, Server Actions, React Server Components)
+- **Drizzle ORM + PGlite** — Postgres real embutido (arquivo local em `./pgdata`), sem Docker e sem servidor. O schema é 100% Postgres: migrar para Supabase/RDS depois é trocar o driver.
+- **Tailwind CSS**
+- Auth mockada por cookie (usuários seedados) — trocar por auth real quando sair do protótipo.
+
+## Rodando
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run db:push   # cria o schema no PGlite
+npm run db:seed   # popula com dados de demonstração da Sansol
+npm run dev       # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Entre em `/login` escolhendo um dos perfis (owner, gerente, vendedores, técnico de campo).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> Para resetar o banco: apague a pasta `pgdata/` e rode `db:push` + `db:seed` de novo.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Modelo de dados
 
-## Learn More
+Multi-tenant (shared schema + `workspace_id` em toda tabela). Núcleo CRM:
+`workspaces`, `users`, `workspace_members` (papéis: owner/admin/manager/rep/installer/viewer),
+`companies`, `contacts`, `pipelines`, `pipeline_stages`, `opportunities`,
+`opportunity_stage_history` (velocity/conversão de funil), `tasks`, `activities` (log append-only, inclui ações de agentes IA).
 
-To learn more about Next.js, take a look at the following resources:
+Vertical solar:
+`sites` (imóvel/telhado/consumo), `site_surveys` (visita técnica), `proposals` (kWp, equipamentos, payback, financiamento),
+`installation_projects` (homologação → concessionária → instalação → sistema ligado), `equipment_catalog`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Regras de negócio implementadas
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Dois pipelines encadeados**: Vendas e Projeto/Instalação. Ao mover uma oportunidade para "Contrato assinado" (etapa `is_won`), um workflow cria automaticamente o projeto de instalação no primeiro estágio do pipeline de instalação, vinculando o site da empresa.
+- **Histórico de estágio**: toda mudança grava `opportunity_stage_history` com tempo na etapa.
+- **SLA por etapa**: cards no kanban ficam com borda vermelha e ⚠ quando o tempo na etapa estoura o `sla_days`.
+- **Forecast ponderado**: dashboard soma `amount × probability` da etapa.
+- Toda ação relevante vira `activity` na timeline (usuário, sistema ou agente IA).
