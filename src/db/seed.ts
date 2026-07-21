@@ -222,6 +222,92 @@ async function main() {
     { workspaceId: ws.id, relatedToType: "installation_project", relatedToId: opps[6].id, assigneeId: edu.id, createdBy: bruno.id, type: "visit", title: "Instalação — Auto Peças Silva (20 kWp)", dueAt: daysAhead(5) },
   ]);
 
+  // WhatsApp: templates + conversas com histórico
+  await db.insert(s.whatsappTemplates).values([
+    { workspaceId: ws.id, title: "Saudação inicial", category: "saudacao", body: "Olá! Aqui é da Sansol Energia Solar ☀️ Vi seu interesse em reduzir a conta de luz. Posso te fazer algumas perguntas rápidas para simular sua economia?" },
+    { workspaceId: ws.id, title: "Envio de proposta", category: "proposta", body: "Prontinho! Sua proposta personalizada está anexada. Qualquer dúvida sobre o dimensionamento ou financiamento, me chama por aqui." },
+    { workspaceId: ws.id, title: "Follow-up proposta parada", category: "proposta", body: "Oi! Passando para saber se conseguiu dar uma olhada na proposta que enviei. Fico à disposição para ajustar valores ou condições de pagamento." },
+    { workspaceId: ws.id, title: "Atualização de instalação", category: "instalacao", body: "Boas notícias! Sua homologação foi aprovada pela concessionária. Vamos agendar a instalação — qual a melhor data para você?" },
+    { workspaceId: ws.id, title: "Cobrança amigável", category: "cobranca", body: "Oi! Notei que a parcela ainda está em aberto. Consegue verificar? Qualquer imprevisto, me avisa que resolvemos juntos." },
+  ]);
+
+  const waConvData = [
+    {
+      contact: 0, opp: 0, owner: carla, status: "open" as const, lastAgo: 0.05, unread: 2,
+      messages: [
+        { dir: "in" as const, text: "Oi, vi o anúncio de vocês no Instagram. Quanto custa energia solar pra um mercado do meu tamanho?", ago: 3 },
+        { dir: "out" as const, text: "Olá Roberto! Aqui é a Carla da Sansol ☀️ Consigo te passar uma estimativa rápida — qual sua conta de luz média por mês?", by: carla, ago: 2.9 },
+        { dir: "in" as const, text: "Fica em torno de 8 mil reais", ago: 2.8 },
+        { dir: "out" as const, text: "Perfeito, dá pra reduzir bastante isso. Vou agendar uma visita técnica gratuita para dimensionar certinho, pode ser essa semana?", by: carla, ago: 2.7 },
+        { dir: "in" as const, text: "Pode sim! Quinta de manhã funciona", ago: 0.2 },
+        { dir: "in" as const, text: "Vocês fazem financiamento também?", ago: 0.05 },
+      ],
+    },
+    {
+      contact: 4, opp: 4, owner: carla, status: "pending" as const, lastAgo: 0.5, unread: 1,
+      messages: [
+        { dir: "out" as const, text: "Oi Seu Antônio! Passando para saber se conseguiu ver a proposta da padaria que te mandei.", by: carla, ago: 11 },
+        { dir: "in" as const, text: "Oi Carla, vi sim! Achei o valor bom, só preciso conversar com minha esposa", ago: 10 },
+        { dir: "out" as const, text: "Sem pressa! Fico à disposição se tiverem dúvidas sobre o financiamento ou a instalação.", by: carla, ago: 9.5 },
+        { dir: "in" as const, text: "Ela gostou também! Só uma dúvida: em quanto tempo a instalação fica pronta depois que assinamos?", ago: 0.5 },
+      ],
+    },
+    {
+      contact: 5, opp: 5, owner: diego, status: "closed" as const, lastAgo: 2, unread: 0,
+      messages: [
+        { dir: "out" as const, text: "Dra. Patrícia, boas notícias! Sua homologação foi aprovada pela CELESC 🎉", by: diego, ago: 4 },
+        { dir: "in" as const, text: "Que ótimo! Quando fica a instalação?", ago: 3.8 },
+        { dir: "out" as const, text: "Já está agendada, nosso técnico Eduardo vai até a clínica. Ele vai confirmar o horário exato.", by: diego, ago: 3.7 },
+        { dir: "in" as const, text: "Perfeito, muito obrigada pela atenção durante todo o processo!", ago: 2 },
+      ],
+    },
+    {
+      contact: 2, opp: 2, owner: diego, status: "open" as const, lastAgo: 1, unread: 0,
+      messages: [
+        { dir: "in" as const, text: "Diego, recebi a proposta do hotel. O valor do inversor Growatt pode ser trocado por um Fronius?", ago: 5 },
+        { dir: "out" as const, text: "Consigo sim, o Fronius tem uma garantia menor (7 anos vs 10) mas é mais robusto. Quer que eu refaça a proposta com ele?", by: diego, ago: 4.8 },
+        { dir: "in" as const, text: "Pode refazer, quero comparar os dois", ago: 1 },
+      ],
+    },
+    {
+      contact: 3, opp: null, owner: diego, status: "open" as const, lastAgo: 0.9, unread: 0,
+      messages: [
+        { dir: "out" as const, text: "Oi Juliana! Aqui é da Sansol. Vi que preencheu nosso formulário do site sobre energia solar para a transportadora.", by: diego, ago: 1 },
+        { dir: "in" as const, text: "Oi! Sim, temos um pátio grande e queria entender se compensa colocar placas no telhado do galpão", ago: 0.9 },
+      ],
+    },
+  ];
+
+  for (const wc of waConvData) {
+    const contact = contacts[wc.contact];
+    if (!contact.phone) continue;
+    const [conv] = await db.insert(s.whatsappConversations).values({
+      workspaceId: ws.id,
+      contactId: contact.id,
+      companyId: contact.companyId,
+      opportunityId: wc.opp !== null ? opps[wc.opp].id : null,
+      phone: contact.phone,
+      contactName: contact.name,
+      assignedTo: wc.owner.id,
+      status: wc.status,
+      unreadCount: wc.unread,
+      lastMessageAt: daysAgo(wc.lastAgo),
+      lastMessagePreview: wc.messages[wc.messages.length - 1].text,
+    }).returning();
+
+    await db.insert(s.whatsappMessages).values(
+      wc.messages.map((m) => ({
+        workspaceId: ws.id,
+        conversationId: conv.id,
+        direction: m.dir,
+        body: m.text,
+        sentBy: m.dir === "out" ? m.by?.id : undefined,
+        status: m.dir === "out" ? ("read" as const) : ("sent" as const),
+        createdAt: daysAgo(m.ago),
+      }))
+    );
+  }
+
   console.log("Seed concluído ✔");
   console.log(`Workspace: ${ws.name} | usuários: ${users.length} | oportunidades: ${opps.length}`);
   await client.close();

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq } from "drizzle-orm";
 import {
-  Check, FileText, Home, Phone, Plus, Settings2, Sparkles, StickyNote, Target, User, Wrench, X, Zap,
+  Check, FileText, Home, MessageCircle, Phone, Plus, Settings2, Sparkles, StickyNote, Target, User, Wrench, X, Zap,
 } from "lucide-react";
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
@@ -9,6 +9,7 @@ import { can } from "@/lib/policy";
 import { addNote } from "@/app/actions";
 import { createProposal } from "@/app/actions-create";
 import { aiGenerateProposal } from "@/app/actions-ai";
+import { openWhatsappForOpportunity } from "@/app/actions-whatsapp";
 import { AiButton } from "@/components/AiButton";
 import { brl, dateBR, daysSince, kwp, relTime } from "@/lib/format";
 
@@ -150,6 +151,13 @@ export default async function OportunidadePage({ params }: { params: Promise<{ i
             <div className="text-sm font-medium text-zinc-900">{row.contactName ?? "—"}</div>
             <div className="text-xs text-zinc-500 mt-0.5 tabular-nums">{row.contactPhone}</div>
             <div className="text-xs text-zinc-500">{row.contactEmail}</div>
+            {row.contactPhone && can(user.role, "use_whatsapp") && (
+              <form action={openWhatsappForOpportunity.bind(null, id)} className="mt-3">
+                <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 hover:bg-emerald-100 transition-colors">
+                  <MessageCircle className="h-3.5 w-3.5" /> Conversar no WhatsApp
+                </button>
+              </form>
+            )}
           </div>
 
           {site && (

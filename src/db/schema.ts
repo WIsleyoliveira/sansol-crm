@@ -211,6 +211,50 @@ export const installationProjects = pgTable("installation_projects", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ─── WhatsApp ───────────────────────────────────────────────────────────────
+
+export const whatsappConversations = pgTable("whatsapp_conversations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  companyId: uuid("company_id").references(() => companies.id),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+  phone: text("phone").notNull(),
+  contactName: text("contact_name").notNull(),
+  assignedTo: uuid("assigned_to").references(() => users.id),
+  lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
+  lastMessagePreview: text("last_message_preview"),
+  unreadCount: integer("unread_count").notNull().default(0),
+  status: text("status", { enum: ["open", "pending", "closed"] }).notNull().default("open"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [
+  index("ix_wa_conv_ws").on(t.workspaceId),
+  uniqueIndex("uq_wa_conv_phone").on(t.workspaceId, t.phone),
+]);
+
+export const whatsappMessages = pgTable("whatsapp_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  conversationId: uuid("conversation_id").notNull().references(() => whatsappConversations.id),
+  direction: text("direction", { enum: ["in", "out"] }).notNull(),
+  body: text("body").notNull(),
+  mediaType: text("media_type", { enum: ["text", "image", "document", "audio"] }).notNull().default("text"),
+  mediaUrl: text("media_url"),
+  sentBy: uuid("sent_by").references(() => users.id),
+  sentByAgent: boolean("sent_by_agent").notNull().default(false),
+  status: text("status", { enum: ["queued", "sent", "delivered", "read", "failed"] }).notNull().default("sent"),
+  providerMessageId: text("provider_message_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_wa_msg_conv").on(t.conversationId)]);
+
+export const whatsappTemplates = pgTable("whatsapp_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  category: text("category", { enum: ["saudacao", "proposta", "cobranca", "instalacao", "geral"] }).notNull().default("geral"),
+});
+
 export const equipmentCatalog = pgTable("equipment_catalog", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
