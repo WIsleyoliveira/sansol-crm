@@ -85,13 +85,13 @@ export default async function TarefasPage() {
         </button>
       </form>
 
-      <div className="rounded-2xl bg-white border border-zinc-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.04)] divide-y divide-zinc-50">
+      <div className="rounded-2xl bg-white border border-zinc-100 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-14px_rgba(0,0,0,0.12)] divide-y divide-zinc-50">
         {open.map((r) => <TaskRow key={r.task.id} r={r} />)}
         {open.length === 0 && <div className="px-5 py-10 text-center text-sm text-zinc-400">Tudo em dia.</div>}
       </div>
 
       {done.length > 0 && (
-        <div className="mt-5 rounded-2xl bg-white border border-zinc-200/70 divide-y divide-zinc-50 opacity-60">
+        <div className="mt-5 rounded-2xl bg-white border border-zinc-100 divide-y divide-zinc-50 opacity-60">
           {done.map((r) => <TaskRow key={r.task.id} r={r} />)}
         </div>
       )}

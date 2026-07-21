@@ -64,7 +64,7 @@ export function Kanban({
           key={col.id}
           onDragOver={(e) => e.preventDefault()}
           onDrop={() => onDrop(col.id)}
-          className="w-[290px] shrink-0 rounded-2xl bg-zinc-100/60 border border-zinc-200/60"
+          className="w-[290px] shrink-0 rounded-2xl bg-zinc-50/80 border border-zinc-100"
         >
           <div className="px-4 pt-3.5 pb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -88,8 +88,8 @@ export function Kanban({
                 <div
                   draggable
                   onDragStart={() => setDragging(card.id)}
-                  className={`rounded-xl bg-white border p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-px transition-all ${
-                    overSla ? "border-red-200 ring-1 ring-red-100" : "border-zinc-200/80"
+                  className={`rounded-xl bg-white border p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.02)] cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-px transition-all ${
+                    overSla ? "border-red-200 ring-1 ring-red-100" : "border-zinc-100"
                   }`}
                 >
                   <div className="text-[13px] font-semibold text-zinc-900 leading-snug">{card.title}</div>
@@ -108,7 +108,7 @@ export function Kanban({
                         <Clock className="h-2.5 w-2.5" />{card.daysInStage}d
                       </span>
                       {card.ownerInitials && (
-                        <span className="h-5 w-5 rounded-full bg-zinc-800 text-[9px] font-bold text-white flex items-center justify-center">
+                        <span className="h-5 w-5 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-900 text-[9px] font-bold text-white flex items-center justify-center">
                           {card.ownerInitials}
                         </span>
                       )}

@@ -21,7 +21,7 @@ export default async function ContatosPage() {
         <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Contatos</h1>
         <p className="text-sm text-zinc-500 mt-0.5">{rows.length} pessoas na base</p>
       </div>
-      <div className="rounded-2xl bg-white border border-zinc-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="rounded-2xl bg-white border border-zinc-100 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-14px_rgba(0,0,0,0.12)] overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50/80 text-left text-[11px] uppercase tracking-wide text-zinc-400">
             <tr>

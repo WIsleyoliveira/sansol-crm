@@ -80,7 +80,7 @@ export default async function OportunidadePage({ params }: { params: Promise<{ i
     pending: "Pendente", viable: "Viável", not_viable: "Inviável", needs_reinforcement: "Requer reforço estrutural",
   };
 
-  const card = "rounded-2xl bg-white border border-zinc-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.04)]";
+  const card = "rounded-2xl bg-white border border-zinc-100 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-14px_rgba(0,0,0,0.12)]";
   const cardHeader = "px-5 py-4 border-b border-zinc-100 flex items-center gap-2 font-semibold text-sm text-zinc-800";
 
   return (

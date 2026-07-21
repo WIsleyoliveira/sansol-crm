@@ -3,6 +3,8 @@ import { ArrowRight, Sun } from "lucide-react";
 import { db, schema as s } from "@/db";
 import { loginAs } from "@/app/actions";
 
+export const dynamic = "force-dynamic";
+
 const roleLabel: Record<string, string> = {
   owner: "Proprietária", admin: "Admin", manager: "Gerente comercial",
   rep: "Vendedor(a)", installer: "Técnico de campo", viewer: "Visualização",

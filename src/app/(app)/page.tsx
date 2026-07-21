@@ -64,7 +64,7 @@ export default async function DashboardPage() {
     installation_stage_changed: <Wrench className="h-3.5 w-3.5" />,
   };
 
-  const card = "rounded-2xl bg-white border border-zinc-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.04)]";
+  const card = "rounded-2xl bg-white border border-zinc-100 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-14px_rgba(0,0,0,0.12)]";
 
   return (
     <div className="p-8 space-y-6 max-w-[1500px]">

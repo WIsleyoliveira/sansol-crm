@@ -62,7 +62,7 @@ export default async function WhatsappPage({
   return (
     <div className="flex h-full">
       {/* Lista de conversas */}
-      <div className="w-[340px] shrink-0 border-r border-zinc-200 bg-white flex flex-col">
+      <div className="w-[340px] shrink-0 border-r border-zinc-100 bg-white flex flex-col">
         <div className="px-5 py-4 border-b border-zinc-100">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-bold text-zinc-900 tracking-tight">WhatsApp</h1>
@@ -120,7 +120,7 @@ export default async function WhatsappPage({
       {/* Thread */}
       {active ? (
         <div className="flex-1 flex flex-col bg-[#efe9df] min-w-0">
-          <div className="px-6 py-3.5 bg-white border-b border-zinc-200 flex items-center justify-between shrink-0">
+          <div className="px-6 py-3.5 bg-white border-b border-zinc-100 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-900 text-white flex items-center justify-center text-xs font-bold">
                 {active.conv.contactName.split(" ").map((p) => p[0]).slice(0, 2).join("")}
@@ -166,7 +166,7 @@ export default async function WhatsappPage({
             )}
           </div>
 
-          <form action={sendAction} className="px-6 py-4 bg-white border-t border-zinc-200 flex gap-2 shrink-0">
+          <form action={sendAction} className="px-6 py-4 bg-white border-t border-zinc-100 flex gap-2 shrink-0">
             <input name="body" required autoComplete="off" placeholder="Digite uma mensagem…"
               className="flex-1 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
             <button className="h-11 w-11 shrink-0 rounded-full bg-emerald-500 text-white flex items-center justify-center hover:bg-emerald-600 transition-colors">
@@ -175,7 +175,7 @@ export default async function WhatsappPage({
           </form>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center bg-[#f6f6f4] text-zinc-400">
+        <div className="flex-1 flex items-center justify-center bg-[#faf9f6] text-zinc-400">
           <div className="text-center">
             <MessageCircle className="h-10 w-10 mx-auto mb-3" />
             Selecione uma conversa
@@ -185,7 +185,7 @@ export default async function WhatsappPage({
 
       {/* Painel lateral de contexto */}
       {active && (
-        <div className="w-[280px] shrink-0 border-l border-zinc-200 bg-white p-5 space-y-4 overflow-y-auto">
+        <div className="w-[280px] shrink-0 border-l border-zinc-100 bg-white p-5 space-y-4 overflow-y-auto">
           <div>
             <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide mb-3">Contato</div>
             <div className="flex items-center gap-2 text-sm text-zinc-700">
