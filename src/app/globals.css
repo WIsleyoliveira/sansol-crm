@@ -3,6 +3,15 @@
 :root {
   --background: #faf9f6;
   --foreground: #18181b;
+  /* Este app é sempre light-mode. Sem isso, navegadores (Safari em
+     especial) pintam a área da página com o "canvas" escuro do sistema
+     operacional antes/ao redor do conteúdo quando o SO está em modo
+     escuro — aparecendo como fundo preto atrás dos cards brancos. */
+  color-scheme: light;
+}
+
+html {
+  background: #faf9f6;
 }
 
 @theme inline {
