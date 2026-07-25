@@ -6,7 +6,7 @@ import {
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/policy";
-import { addNote } from "@/app/actions";
+import { addNote, moveOpportunityStage } from "@/app/actions";
 import { createProposal } from "@/app/actions-create";
 import { aiGenerateProposal } from "@/app/actions-ai";
 import { openWhatsappForOpportunity } from "@/app/actions-whatsapp";
@@ -35,6 +35,15 @@ export default async function OportunidadePage({ params }: { params: Promise<{ i
 
   if (!row) notFound();
   const { opp } = row;
+
+  // Caminho linear: as etapas do funil em ordem, com a próxima ação sempre visível
+  const stages = await db.select().from(s.pipelineStages)
+    .where(eq(s.pipelineStages.pipelineId, opp.pipelineId))
+    .orderBy(asc(s.pipelineStages.order));
+  const pathStages = stages.filter((st) => !st.isLost);
+  const lostStage = stages.find((st) => st.isLost);
+  const currentIdx = pathStages.findIndex((st) => st.id === opp.stageId);
+  const nextStage = opp.status === "open" && currentIdx >= 0 ? pathStages[currentIdx + 1] : undefined;
 
   const [acts, props, site, survey, [project]] = await Promise.all([
     db.select({ act: s.activities, actorName: s.users.name }).from(s.activities)
@@ -106,6 +115,53 @@ export default async function OportunidadePage({ params }: { params: Promise<{ i
             {kwp(opp.systemSizeKwp)}{showFinancials && opp.expectedCloseDate ? ` · fecha ${dateBR(opp.expectedCloseDate)}` : ""}
           </div>
         </div>
+      </div>
+
+      {/* Caminho linear da venda */}
+      <div className={`${card} p-5 mb-5`}>
+        <div className="flex items-center gap-0">
+          {pathStages.map((st, i) => {
+            const done = currentIdx > i || opp.status === "won";
+            const current = currentIdx === i && opp.status === "open";
+            return (
+              <div key={st.id} className="flex items-center flex-1 last:flex-none">
+                <div className="flex flex-col items-center gap-1.5 min-w-0">
+                  <div className={`h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${
+                    done ? "bg-emerald-500 text-white"
+                    : current ? "bg-amber-500 text-white ring-4 ring-amber-100"
+                    : "bg-zinc-100 text-zinc-400"
+                  }`}>
+                    {done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : i + 1}
+                  </div>
+                  <span className={`text-[10px] font-medium text-center leading-tight ${current ? "text-amber-700" : done ? "text-emerald-700" : "text-zinc-400"}`}>
+                    {st.name}
+                  </span>
+                </div>
+                {i < pathStages.length - 1 && (
+                  <div className={`h-0.5 flex-1 mx-2 mb-5 rounded ${currentIdx > i || opp.status === "won" ? "bg-emerald-400" : "bg-zinc-100"}`} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {opp.status === "open" && (nextStage || lostStage) && (
+          <div className="flex items-center gap-2 mt-5 pt-4 border-t border-zinc-100">
+            {nextStage && (
+              <form action={moveOpportunityStage.bind(null, id, nextStage.id)}>
+                <button className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 text-white text-[13px] font-semibold px-5 py-2.5 hover:bg-zinc-700 shadow-sm transition-colors">
+                  Avançar para “{nextStage.name}” <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                </button>
+              </form>
+            )}
+            {lostStage && (
+              <form action={moveOpportunityStage.bind(null, id, lostStage.id)}>
+                <button className="inline-flex items-center gap-1.5 rounded-xl bg-white border border-zinc-200 text-red-600 text-[13px] font-semibold px-4 py-2.5 hover:bg-red-50 hover:border-red-200 transition-colors">
+                  <X className="h-3.5 w-3.5" strokeWidth={3} /> Marcar como perdido
+                </button>
+              </form>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">

@@ -146,6 +146,42 @@ const nextActionsSchema: JsonSchema = {
   additionalProperties: false,
 };
 
+export type ChatbotReply = {
+  reply: string;
+  intent: "orcamento" | "duvida" | "suporte" | "outro";
+  qualified: boolean;
+};
+
+const chatbotSchema: JsonSchema = {
+  type: "object",
+  properties: {
+    reply: { type: "string", description: "Resposta curta e cordial em português, pronta para enviar no WhatsApp" },
+    intent: { type: "string", enum: ["orcamento", "duvida", "suporte", "outro"] },
+    qualified: { type: "boolean", description: "true quando o cliente já informou cidade E consumo/valor da conta de luz" },
+  },
+  required: ["reply", "intent", "qualified"],
+  additionalProperties: false,
+};
+
+// Chatbot de atendimento do WhatsApp: responde clientes B2C na hora e
+// qualifica o lead (cidade + valor da conta de luz) para o time de vendas.
+export async function chatbotReply(input: {
+  contactName: string;
+  history: { direction: "in" | "out"; body: string }[];
+}): Promise<ChatbotReply> {
+  const transcript = input.history
+    .map((m) => `${m.direction === "in" ? "Cliente" : "Sansol"}: ${m.body}`)
+    .join("\n");
+  return generateJson<ChatbotReply>(
+    "Você é o assistente virtual da Sansol Energia Solar (Santa Catarina, Brasil), atendendo clientes residenciais (B2C) no WhatsApp. " +
+      "Objetivo: responder rápido, tirar dúvidas sobre energia solar e qualificar o lead perguntando (1) a cidade e (2) o valor médio da conta de luz. " +
+      "Nunca invente preços fechados — diga que um vendedor envia a proposta. Máximo 3 frases por resposta, tom simpático e direto. " +
+      "Se o cliente pedir para falar com humano, diga que um vendedor assume a conversa em instantes. Responda somente com o JSON pedido.",
+    `Conversa até agora com ${input.contactName}:\n${transcript}\n\nGere a próxima resposta da Sansol.`,
+    chatbotSchema,
+  );
+}
+
 export async function suggestNextActions(input: {
   opportunities: {
     id: string;
@@ -157,7 +193,7 @@ export async function suggestNextActions(input: {
   }[];
 }): Promise<NextActionSuggestion[]> {
   const result = await generateJson<{ suggestions: NextActionSuggestion[] }>(
-    "Você é o agente de next-best-action do CRM da Sansol (energia solar B2B, Brasil). " +
+    "Você é o agente de next-best-action do CRM da Sansol (energia solar residencial B2C, Brasil). " +
       "Para cada oportunidade parada, sugira UMA próxima ação concreta e específica para o vendedor destravar o negócio. " +
       "Use o campo `id` de cada oportunidade como `opportunity_id`, copiado exatamente. " +
       "Títulos de tarefa curtos, acionáveis, em português. Responda somente com o JSON pedido.",

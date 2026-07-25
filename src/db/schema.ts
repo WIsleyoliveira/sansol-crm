@@ -54,6 +54,8 @@ export const contacts = pgTable("contacts", {
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
+  cpf: text("cpf"),
+  birthDate: timestamp("birth_date"),
   title: text("title"),
   ownerId: uuid("owner_id").references(() => users.id),
   customFields: jsonb("custom_fields").notNull().default({}),
@@ -265,3 +267,270 @@ export const equipmentCatalog = pgTable("equipment_catalog", {
   unitCost: numeric("unit_cost", { precision: 12, scale: 2 }),
   unitPrice: numeric("unit_price", { precision: 12, scale: 2 }),
 });
+
+// ─── MÓDULO VENDAS: comissões & contratos ─────────────────────────────────────
+
+export const commissions = pgTable("commissions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  baseAmount: numeric("base_amount", { precision: 12, scale: 2 }).notNull(),
+  ratePct: numeric("rate_pct", { precision: 5, scale: 2 }).notNull().default("3.00"),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  status: text("status", { enum: ["pending", "approved", "paid", "canceled"] }).notNull().default("pending"),
+  approvedAt: timestamp("approved_at"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_commissions_ws").on(t.workspaceId)]);
+
+export const contracts = pgTable("contracts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+  number: text("number").notNull(),
+  value: numeric("value", { precision: 12, scale: 2 }).notNull(),
+  paymentTerms: text("payment_terms"),
+  status: text("status", { enum: ["draft", "sent", "signed", "canceled"] }).notNull().default("draft"),
+  sentAt: timestamp("sent_at"),
+  signedAt: timestamp("signed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_contracts_ws").on(t.workspaceId)]);
+
+// ─── MÓDULO FINANCEIRO (ERP) ──────────────────────────────────────────────────
+
+export const financialAccounts = pgTable("financial_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  name: text("name").notNull(),
+  bank: text("bank"),
+  kind: text("kind", { enum: ["checking", "savings", "cash", "credit_card"] }).notNull().default("checking"),
+  balance: numeric("balance", { precision: 14, scale: 2 }).notNull().default("0"),
+  openBankingConnected: boolean("open_banking_connected").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const payables = pgTable("payables", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  accountId: uuid("account_id").references(() => financialAccounts.id),
+  description: text("description").notNull(),
+  supplier: text("supplier"),
+  category: text("category", { enum: ["equipment", "payroll", "tax", "rent", "marketing", "logistics", "other"] }).notNull().default("other"),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  status: text("status", { enum: ["open", "scheduled", "paid", "overdue"] }).notNull().default("open"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_payables_ws").on(t.workspaceId)]);
+
+export const receivables = pgTable("receivables", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  accountId: uuid("account_id").references(() => financialAccounts.id),
+  companyId: uuid("company_id").references(() => companies.id),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+  description: text("description").notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  installmentNo: integer("installment_no"),
+  installmentTotal: integer("installment_total"),
+  dueDate: timestamp("due_date").notNull(),
+  status: text("status", { enum: ["open", "received", "overdue"] }).notNull().default("open"),
+  receivedAt: timestamp("received_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_receivables_ws").on(t.workspaceId)]);
+
+export const bankTransactions = pgTable("bank_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  accountId: uuid("account_id").notNull().references(() => financialAccounts.id),
+  date: timestamp("date").notNull(),
+  description: text("description").notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(), // + entrada, - saída
+  reconciled: boolean("reconciled").notNull().default(false),
+  matchedType: text("matched_type", { enum: ["payable", "receivable"] }),
+  matchedId: uuid("matched_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_banktx_ws").on(t.workspaceId)]);
+
+export const inventoryItems = pgTable("inventory_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  equipmentId: uuid("equipment_id").references(() => equipmentCatalog.id),
+  sku: text("sku").notNull(),
+  name: text("name").notNull(),
+  quantity: integer("quantity").notNull().default(0),
+  minStock: integer("min_stock").notNull().default(0),
+  location: text("location"),
+  unitCost: numeric("unit_cost", { precision: 12, scale: 2 }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [index("ix_inventory_ws").on(t.workspaceId)]);
+
+export const stockMovements = pgTable("stock_movements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  itemId: uuid("item_id").notNull().references(() => inventoryItems.id),
+  kind: text("kind", { enum: ["in", "out", "adjust"] }).notNull(),
+  quantity: integer("quantity").notNull(),
+  reason: text("reason"),
+  relatedOpportunityId: uuid("related_opportunity_id").references(() => opportunities.id),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const invoices = pgTable("invoices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  companyId: uuid("company_id").references(() => companies.id),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+  kind: text("kind", { enum: ["nfe", "nfse"] }).notNull().default("nfe"),
+  number: text("number").notNull(),
+  series: text("series").notNull().default("1"),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  taxAmount: numeric("tax_amount", { precision: 12, scale: 2 }),
+  status: text("status", { enum: ["draft", "issued", "canceled", "error"] }).notNull().default("draft"),
+  accessKey: text("access_key"),
+  issuedAt: timestamp("issued_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_invoices_ws").on(t.workspaceId)]);
+
+export const payrollEntries = pgTable("payroll_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  referenceMonth: text("reference_month").notNull(), // "2026-07"
+  baseSalary: numeric("base_salary", { precision: 12, scale: 2 }).notNull().default("0"),
+  commissionTotal: numeric("commission_total", { precision: 12, scale: 2 }).notNull().default("0"),
+  benefits: numeric("benefits", { precision: 12, scale: 2 }).notNull().default("0"),
+  deductions: numeric("deductions", { precision: 12, scale: 2 }).notNull().default("0"),
+  netPay: numeric("net_pay", { precision: 12, scale: 2 }).notNull().default("0"),
+  status: text("status", { enum: ["draft", "approved", "paid"] }).notNull().default("draft"),
+  paidAt: timestamp("paid_at"),
+}, (t) => [index("ix_payroll_ws").on(t.workspaceId)]);
+
+// ─── MÓDULO ENGENHARIA ────────────────────────────────────────────────────────
+
+export const engineeringDesigns = pgTable("engineering_designs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+  siteId: uuid("site_id").references(() => sites.id),
+  engineerId: uuid("engineer_id").references(() => users.id),
+  avgConsumptionKwh: integer("avg_consumption_kwh").notNull(),
+  targetOffsetPct: integer("target_offset_pct").notNull().default(100),
+  irradiationKwhM2Day: numeric("irradiation_kwh_m2_day", { precision: 4, scale: 2 }).notNull().default("4.80"),
+  systemSizeKwp: numeric("system_size_kwp", { precision: 8, scale: 2 }).notNull(),
+  panelModel: text("panel_model"),
+  panelWatts: integer("panel_watts"),
+  panelQty: integer("panel_qty"),
+  inverterModel: text("inverter_model"),
+  inverterKw: numeric("inverter_kw", { precision: 6, scale: 2 }),
+  estimatedGenerationKwhMonth: integer("estimated_generation_kwh_month"),
+  performanceRatio: numeric("performance_ratio", { precision: 4, scale: 2 }).notNull().default("0.80"),
+  requiredAreaM2: numeric("required_area_m2", { precision: 8, scale: 1 }),
+  unifilar: jsonb("unifilar").notNull().default({}),
+  status: text("status", { enum: ["draft", "approved", "issued"] }).notNull().default("draft"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_designs_ws").on(t.workspaceId)]);
+
+export const creditPlants = pgTable("credit_plants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  siteId: uuid("site_id").references(() => sites.id),
+  name: text("name").notNull(),
+  generatingUc: text("generating_uc").notNull(), // unidade consumidora geradora
+  capacityKwp: numeric("capacity_kwp", { precision: 8, scale: 2 }).notNull(),
+  avgGenerationKwhMonth: integer("avg_generation_kwh_month").notNull(),
+  modality: text("modality", { enum: ["self", "shared", "remote"] }).notNull().default("shared"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_creditplants_ws").on(t.workspaceId)]);
+
+export const creditBeneficiaries = pgTable("credit_beneficiaries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  plantId: uuid("plant_id").notNull().references(() => creditPlants.id),
+  name: text("name").notNull(),
+  uc: text("uc").notNull(), // unidade consumidora beneficiária
+  sharePct: numeric("share_pct", { precision: 5, scale: 2 }).notNull(),
+  avgConsumptionKwh: integer("avg_consumption_kwh").notNull().default(0),
+});
+
+// ─── MÓDULO OPERAÇÕES ─────────────────────────────────────────────────────────
+
+export const serviceOrders = pgTable("service_orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  number: text("number").notNull(),
+  kind: text("kind", { enum: ["installation", "maintenance", "inspection", "repair", "survey"] }).notNull().default("installation"),
+  companyId: uuid("company_id").references(() => companies.id),
+  siteId: uuid("site_id").references(() => sites.id),
+  installationProjectId: uuid("installation_project_id").references(() => installationProjects.id),
+  technicianId: uuid("technician_id").references(() => users.id),
+  priority: text("priority", { enum: ["low", "normal", "high", "urgent"] }).notNull().default("normal"),
+  status: text("status", { enum: ["scheduled", "in_progress", "done", "canceled"] }).notNull().default("scheduled"),
+  description: text("description"),
+  checklist: jsonb("checklist").notNull().default([]),
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_so_ws").on(t.workspaceId)]);
+
+export const deliveryRoutes = pgTable("delivery_routes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  driverId: uuid("driver_id").references(() => users.id),
+  date: timestamp("date").notNull(),
+  vehicle: text("vehicle"),
+  status: text("status", { enum: ["planned", "in_progress", "done"] }).notNull().default("planned"),
+  stops: jsonb("stops").notNull().default([]), // [{ order, address, company, items, done }]
+  distanceKm: numeric("distance_km", { precision: 8, scale: 1 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_routes_ws").on(t.workspaceId)]);
+
+// ─── MÓDULO PÓS-VENDAS ────────────────────────────────────────────────────────
+
+export const plants = pgTable("plants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  companyId: uuid("company_id").references(() => companies.id),
+  siteId: uuid("site_id").references(() => sites.id),
+  installationProjectId: uuid("installation_project_id").references(() => installationProjects.id),
+  name: text("name").notNull(),
+  capacityKwp: numeric("capacity_kwp", { precision: 8, scale: 2 }).notNull(),
+  inverterBrand: text("inverter_brand"),
+  monitoringProvider: text("monitoring_provider"),
+  monitoringId: text("monitoring_id"),
+  status: text("status", { enum: ["online", "offline", "warning"] }).notNull().default("online"),
+  lastReadingAt: timestamp("last_reading_at"),
+  todayKwh: numeric("today_kwh", { precision: 10, scale: 2 }).notNull().default("0"),
+  monthKwh: numeric("month_kwh", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalKwh: numeric("total_kwh", { precision: 14, scale: 2 }).notNull().default("0"),
+  performanceRatio: numeric("performance_ratio", { precision: 4, scale: 2 }),
+  commissionedAt: timestamp("commissioned_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_plants_ws").on(t.workspaceId)]);
+
+export const plantReadings = pgTable("plant_readings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  plantId: uuid("plant_id").notNull().references(() => plants.id),
+  date: timestamp("date").notNull(),
+  generationKwh: numeric("generation_kwh", { precision: 10, scale: 2 }).notNull(),
+  expectedKwh: numeric("expected_kwh", { precision: 10, scale: 2 }),
+  performanceRatio: numeric("performance_ratio", { precision: 4, scale: 2 }),
+}, (t) => [index("ix_readings_plant").on(t.plantId)]);
+
+export const tickets = pgTable("tickets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  companyId: uuid("company_id").references(() => companies.id),
+  plantId: uuid("plant_id").references(() => plants.id),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  subject: text("subject").notNull(),
+  description: text("description"),
+  channel: text("channel", { enum: ["portal", "whatsapp", "phone", "email"] }).notNull().default("portal"),
+  priority: text("priority", { enum: ["low", "normal", "high", "urgent"] }).notNull().default("normal"),
+  status: text("status", { enum: ["open", "in_progress", "resolved", "closed"] }).notNull().default("open"),
+  assignedTo: uuid("assigned_to").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("ix_tickets_ws").on(t.workspaceId)]);

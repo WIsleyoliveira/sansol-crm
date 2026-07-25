@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
+import { sql } from "drizzle-orm";
 import * as s from "./schema";
 
 const client = new PGlite("./pgdata");
@@ -14,6 +15,23 @@ function daysAhead(n: number) {
 
 async function main() {
   console.log("Seeding Sansol CRM…");
+
+  // Idempotente: limpa tudo antes de semear (evita duplicar em re-execuções).
+  const allTables = [
+    "plant_readings", "tickets", "plants", "delivery_routes", "service_orders",
+    "credit_beneficiaries", "credit_plants", "engineering_designs",
+    "payroll_entries", "invoices", "stock_movements", "inventory_items",
+    "bank_transactions", "receivables", "payables", "financial_accounts",
+    "contracts", "commissions",
+    "whatsapp_messages", "whatsapp_conversations", "whatsapp_templates",
+    "installation_projects", "proposals", "site_surveys", "sites", "equipment_catalog",
+    "tasks", "activities", "opportunity_stage_history", "opportunities",
+    "pipeline_stages", "pipelines", "contacts", "companies",
+    "workspace_members", "users", "workspaces",
+  ];
+  for (const t of allTables) {
+    await db.execute(sql.raw(`TRUNCATE TABLE "${t}" CASCADE`)).catch(() => {});
+  }
 
   const [ws] = await db.insert(s.workspaces).values({
     name: "Sansol Energia Solar",
@@ -71,34 +89,35 @@ async function main() {
     { workspaceId: ws.id, type: "structure", manufacturer: "Romagnole", model: "Kit telhado cerâmico", specs: {}, unitCost: "45.00", unitPrice: "78.00" },
   ]);
 
-  // Companies + contacts + sites
+  // Clientes B2C (pessoa física) + contatos + locais de instalação
   const companiesData = [
-    { name: "Supermercado Bom Preço", industry: "Varejo", size: "51-200", owner: carla },
-    { name: "Frigorífico Santa Fé", industry: "Alimentos", size: "201-500", owner: carla },
-    { name: "Hotel Vista Verde", industry: "Hotelaria", size: "11-50", owner: diego },
-    { name: "Transportadora Rota Sul", industry: "Logística", size: "51-200", owner: diego },
-    { name: "Padaria Pão Dourado", industry: "Alimentos", size: "1-10", owner: carla },
-    { name: "Clínica Vida Plena", industry: "Saúde", size: "11-50", owner: diego },
-    { name: "Auto Peças Silva", industry: "Varejo", size: "11-50", owner: carla },
-    { name: "Fazenda Boa Esperança", industry: "Agronegócio", size: "11-50", owner: diego },
+    { name: "Roberto Nunes", owner: carla },
+    { name: "Fernanda Souza", owner: carla },
+    { name: "Marcos Teixeira", owner: diego },
+    { name: "Juliana Prado", owner: diego },
+    { name: "Antônio Ferreira", owner: carla },
+    { name: "Patrícia Ramos", owner: diego },
+    { name: "Carlos Silva", owner: carla },
+    { name: "João Camargo", owner: diego },
   ];
   const companies = await db.insert(s.companies).values(
-    companiesData.map((c) => ({ workspaceId: ws.id, name: c.name, industry: c.industry, size: c.size, ownerId: c.owner.id }))
+    companiesData.map((c) => ({ workspaceId: ws.id, name: c.name, industry: "Pessoa Física", ownerId: c.owner.id }))
   ).returning();
 
   const contactsData = [
-    { name: "Roberto Nunes", title: "Proprietário", email: "roberto@bompreco.com", phone: "(48) 99911-2233", company: 0 },
-    { name: "Fernanda Souza", title: "Gerente Financeiro", email: "fernanda@santafe.ind.br", phone: "(48) 98822-3344", company: 1 },
-    { name: "Marcos Teixeira", title: "Diretor", email: "marcos@vistaverde.tur.br", phone: "(47) 99733-4455", company: 2 },
-    { name: "Juliana Prado", title: "Sócia", email: "juliana@rotasul.log.br", phone: "(47) 98644-5566", company: 3 },
-    { name: "Seu Antônio", title: "Dono", email: "antonio@paodourado.com", phone: "(48) 99555-6677", company: 4 },
-    { name: "Dra. Patrícia Ramos", title: "Diretora Clínica", email: "patricia@vidaplena.med.br", phone: "(48) 98466-7788", company: 5 },
-    { name: "Carlos Silva", title: "Proprietário", email: "carlos@autopecassilva.com", phone: "(49) 99377-8899", company: 6 },
-    { name: "João Boa Esperança", title: "Produtor", email: "joao@boaesperanca.agr.br", phone: "(49) 98288-9900", company: 7 },
+    { name: "Roberto Nunes", cpf: "052.318.447-90", birth: "1978-03-12", email: "roberto.nunes@gmail.com", phone: "(48) 99911-2233", company: 0 },
+    { name: "Fernanda Souza", cpf: "081.226.905-14", birth: "1985-11-02", email: "fer.souza@hotmail.com", phone: "(48) 98822-3344", company: 1 },
+    { name: "Marcos Teixeira", cpf: "033.914.782-61", birth: "1969-07-25", email: "marcos.teixeira@gmail.com", phone: "(47) 99733-4455", company: 2 },
+    { name: "Juliana Prado", cpf: "094.557.213-08", birth: "1990-01-18", email: "ju.prado@gmail.com", phone: "(47) 98644-5566", company: 3 },
+    { name: "Antônio Ferreira", cpf: "021.443.679-35", birth: "1958-09-30", email: "antonio.ferreira58@gmail.com", phone: "(48) 99555-6677", company: 4 },
+    { name: "Patrícia Ramos", cpf: "067.882.140-52", birth: "1982-05-07", email: "patricia.ramos@outlook.com", phone: "(48) 98466-7788", company: 5 },
+    { name: "Carlos Silva", cpf: "045.190.328-77", birth: "1975-12-14", email: "carlos.silva75@gmail.com", phone: "(49) 99377-8899", company: 6 },
+    { name: "João Camargo", cpf: "029.664.851-03", birth: "1963-04-21", email: "joao.camargo@gmail.com", phone: "(49) 98288-9900", company: 7 },
   ];
   const contacts = await db.insert(s.contacts).values(
     contactsData.map((c) => ({
-      workspaceId: ws.id, name: c.name, title: c.title, email: c.email, phone: c.phone,
+      workspaceId: ws.id, name: c.name, email: c.email, phone: c.phone,
+      cpf: c.cpf, birthDate: new Date(`${c.birth}T00:00:00`),
       companyId: companies[c.company].id, ownerId: companies[c.company].ownerId,
     }))
   ).returning();
@@ -123,15 +142,15 @@ async function main() {
 
   // Opportunities across sales stages
   const oppsData = [
-    { name: "Supermercado Bom Preço — 75 kWp", company: 0, stage: stVisita, amount: "295000.00", kwp: "75.00", owner: carla, source: "Indicação", days: 3, close: 40 },
-    { name: "Frigorífico Santa Fé — 290 kWp", company: 1, stage: stNegoc, amount: "1090000.00", kwp: "290.00", owner: carla, source: "Tráfego pago", days: 12, close: 20 },
-    { name: "Hotel Vista Verde — 48 kWp", company: 2, stage: stProposta, amount: "192000.00", kwp: "48.00", owner: diego, source: "Site", days: 9, close: 30 },
-    { name: "Transportadora Rota Sul — 36 kWp", company: 3, stage: stLead, amount: "148000.00", kwp: "36.00", owner: diego, source: "Indicação", days: 1, close: 60 },
-    { name: "Padaria Pão Dourado — 16 kWp", company: 4, stage: stProposta, amount: "68000.00", kwp: "16.00", owner: carla, source: "Indicação", days: 11, close: 25 },
-    { name: "Clínica Vida Plena — 32 kWp", company: 5, stage: stGanho, amount: "134000.00", kwp: "32.00", owner: diego, source: "Site", days: 2, close: -5, won: true },
-    { name: "Auto Peças Silva — 20 kWp", company: 6, stage: stGanho, amount: "84000.00", kwp: "20.00", owner: carla, source: "Tráfego pago", days: 30, close: -30, won: true },
-    { name: "Fazenda Boa Esperança — usina 110 kWp", company: 7, stage: stNegoc, amount: "410000.00", kwp: "110.00", owner: diego, source: "Feira agro", days: 6, close: 15 },
-    { name: "Hotel Vista Verde — ampliação 12 kWp", company: 2, stage: stPerdido, amount: "52000.00", kwp: "12.00", owner: diego, source: "Base", days: 20, close: -10, lost: true },
+    { name: "Roberto Nunes — 75 kWp", company: 0, stage: stVisita, amount: "295000.00", kwp: "75.00", owner: carla, source: "Indicação", days: 3, close: 40 },
+    { name: "Fernanda Souza — 290 kWp", company: 1, stage: stNegoc, amount: "1090000.00", kwp: "290.00", owner: carla, source: "Tráfego pago", days: 12, close: 20 },
+    { name: "Marcos Teixeira — 48 kWp", company: 2, stage: stProposta, amount: "192000.00", kwp: "48.00", owner: diego, source: "Loja física", days: 9, close: 30 },
+    { name: "Juliana Prado — 36 kWp", company: 3, stage: stLead, amount: "148000.00", kwp: "36.00", owner: diego, source: "Indicação", days: 1, close: 60 },
+    { name: "Antônio Ferreira — 16 kWp", company: 4, stage: stProposta, amount: "68000.00", kwp: "16.00", owner: carla, source: "WhatsApp", days: 11, close: 25 },
+    { name: "Patrícia Ramos — 32 kWp", company: 5, stage: stGanho, amount: "134000.00", kwp: "32.00", owner: diego, source: "Site", days: 2, close: -5, won: true },
+    { name: "Carlos Silva — 20 kWp", company: 6, stage: stGanho, amount: "84000.00", kwp: "20.00", owner: carla, source: "Tráfego pago", days: 30, close: -30, won: true },
+    { name: "João Camargo — usina 110 kWp", company: 7, stage: stNegoc, amount: "410000.00", kwp: "110.00", owner: diego, source: "Instagram", days: 6, close: 15 },
+    { name: "Marcos Teixeira — ampliação 12 kWp", company: 2, stage: stPerdido, amount: "52000.00", kwp: "12.00", owner: diego, source: "Base / recompra", days: 20, close: -10, lost: true },
   ];
   const opps = await db.insert(s.opportunities).values(
     oppsData.map((o) => ({
@@ -197,7 +216,7 @@ async function main() {
   ]);
 
   // Installation projects for won opps
-  await db.insert(s.installationProjects).values([
+  const instProjects = await db.insert(s.installationProjects).values([
     {
       workspaceId: ws.id, opportunityId: opps[5].id, siteId: sites[5].id,
       projectManagerId: bruno.id, installerId: edu.id, stageId: iHomolog.id,
@@ -210,16 +229,16 @@ async function main() {
       permitStatus: "approved", utilityApprovalStatus: "approved",
       installationScheduledAt: daysAhead(5), stageEnteredAt: daysAgo(2),
     },
-  ]);
+  ]).returning();
 
   // Tasks
   await db.insert(s.tasks).values([
-    { workspaceId: ws.id, relatedToType: "opportunity", relatedToId: opps[0].id, assigneeId: edu.id, createdBy: carla.id, type: "visit", title: "Visita técnica — Supermercado Bom Preço", dueAt: daysAhead(2) },
+    { workspaceId: ws.id, relatedToType: "opportunity", relatedToId: opps[0].id, assigneeId: edu.id, createdBy: carla.id, type: "visit", title: "Visita técnica — Roberto Nunes", dueAt: daysAhead(2) },
     { workspaceId: ws.id, relatedToType: "opportunity", relatedToId: opps[1].id, assigneeId: carla.id, createdBy: bruno.id, type: "meeting", title: "Reunião de negociação com Fernanda (Frigorífico)", dueAt: daysAhead(1) },
-    { workspaceId: ws.id, relatedToType: "opportunity", relatedToId: opps[2].id, assigneeId: diego.id, createdBy: diego.id, type: "call", title: "Follow-up da proposta — Hotel Vista Verde", dueAt: daysAgo(1) },
+    { workspaceId: ws.id, relatedToType: "opportunity", relatedToId: opps[2].id, assigneeId: diego.id, createdBy: diego.id, type: "call", title: "Follow-up da proposta — Marcos Teixeira", dueAt: daysAgo(1) },
     { workspaceId: ws.id, relatedToType: "opportunity", relatedToId: opps[4].id, assigneeId: carla.id, createdByAgent: true, type: "call", title: "[IA] Proposta parada há 11 dias — retomar contato com Seu Antônio", dueAt: daysAhead(0) },
-    { workspaceId: ws.id, relatedToType: "opportunity", relatedToId: opps[3].id, assigneeId: diego.id, createdBy: diego.id, type: "call", title: "Ligação de qualificação — Rota Sul", dueAt: daysAhead(1) },
-    { workspaceId: ws.id, relatedToType: "installation_project", relatedToId: opps[6].id, assigneeId: edu.id, createdBy: bruno.id, type: "visit", title: "Instalação — Auto Peças Silva (20 kWp)", dueAt: daysAhead(5) },
+    { workspaceId: ws.id, relatedToType: "opportunity", relatedToId: opps[3].id, assigneeId: diego.id, createdBy: diego.id, type: "call", title: "Ligação de qualificação — Juliana Prado", dueAt: daysAhead(1) },
+    { workspaceId: ws.id, relatedToType: "installation_project", relatedToId: opps[6].id, assigneeId: edu.id, createdBy: bruno.id, type: "visit", title: "Instalação — Carlos Silva (20 kWp)", dueAt: daysAhead(5) },
   ]);
 
   // WhatsApp: templates + conversas com histórico
@@ -307,6 +326,165 @@ async function main() {
       }))
     );
   }
+
+  // ─── VENDAS: comissões & contratos ─────────────────────────────────────────
+  const wonOpps = opps.filter((o) => o.status === "won");
+  await db.insert(s.commissions).values(
+    wonOpps.map((o, i) => {
+      const base = parseFloat(o.amount ?? "0");
+      const rate = 3;
+      return {
+        workspaceId: ws.id, opportunityId: o.id, userId: o.ownerId!,
+        baseAmount: o.amount!, ratePct: rate.toFixed(2), amount: (base * rate / 100).toFixed(2),
+        status: i === 0 ? ("approved" as const) : ("paid" as const),
+        approvedAt: daysAgo(3), paidAt: i === 0 ? null : daysAgo(1),
+      };
+    })
+  );
+  await db.insert(s.contracts).values(
+    wonOpps.map((o, i) => ({
+      workspaceId: ws.id, opportunityId: o.id,
+      number: `CT-2026-${String(i + 1).padStart(4, "0")}`,
+      value: o.amount!, paymentTerms: i % 2 === 0 ? "Financiamento 60x" : "À vista (5% desconto)",
+      status: "signed" as const, sentAt: daysAgo(10), signedAt: daysAgo(6),
+    }))
+  );
+  // Contrato em negociação (oportunidade aberta na etapa de negociação)
+  const negocOpp = opps[1];
+  await db.insert(s.contracts).values({
+    workspaceId: ws.id, opportunityId: negocOpp.id, number: "CT-2026-0003",
+    value: negocOpp.amount!, paymentTerms: "Financiamento 72x", status: "sent", sentAt: daysAgo(2),
+  });
+
+  // ─── FINANCEIRO ────────────────────────────────────────────────────────────
+  const [accItau, accCaixa] = await db.insert(s.financialAccounts).values([
+    { workspaceId: ws.id, name: "Itaú — Conta Corrente", bank: "Itaú", kind: "checking", balance: "184300.00", openBankingConnected: true },
+    { workspaceId: ws.id, name: "Caixa — Conta Movimento", bank: "Caixa", kind: "checking", balance: "62150.00", openBankingConnected: true },
+    { workspaceId: ws.id, name: "Caixa físico", bank: null, kind: "cash", balance: "3200.00" },
+  ]).returning();
+
+  await db.insert(s.payables).values([
+    { workspaceId: ws.id, accountId: accItau.id, description: "Lote de painéis Canadian Solar 665W (120un)", supplier: "Aldo Solar", category: "equipment", amount: "74400.00", dueDate: daysAhead(8), status: "open" },
+    { workspaceId: ws.id, accountId: accItau.id, description: "Inversores Growatt (8un)", supplier: "Aldo Solar", category: "equipment", amount: "25600.00", dueDate: daysAhead(2), status: "scheduled" },
+    { workspaceId: ws.id, accountId: accItau.id, description: "Folha de pagamento — julho/2026", supplier: null, category: "payroll", amount: "38500.00", dueDate: daysAhead(5), status: "open" },
+    { workspaceId: ws.id, accountId: accCaixa.id, description: "Aluguel galpão + escritório", supplier: "Imobiliária Central", category: "rent", amount: "9800.00", dueDate: daysAgo(2), status: "overdue" },
+    { workspaceId: ws.id, accountId: accItau.id, description: "Tráfego pago — Meta Ads", supplier: "Meta Platforms", category: "marketing", amount: "6500.00", dueDate: daysAhead(12), status: "open" },
+    { workspaceId: ws.id, accountId: accItau.id, description: "DAS Simples Nacional — junho", supplier: "Receita Federal", category: "tax", amount: "14200.00", dueDate: daysAgo(20), status: "paid", paidAt: daysAgo(20) },
+    { workspaceId: ws.id, accountId: accCaixa.id, description: "Frete equipamentos — Fernanda Souza", supplier: "Transportadora Log+", category: "logistics", amount: "3400.00", dueDate: daysAhead(15), status: "open" },
+  ]);
+
+  await db.insert(s.receivables).values([
+    { workspaceId: ws.id, accountId: accItau.id, companyId: companies[5].id, opportunityId: opps[5].id, description: "Patrícia Ramos — entrada 30%", amount: "40200.00", installmentNo: 1, installmentTotal: 1, dueDate: daysAgo(4), status: "received", receivedAt: daysAgo(4) },
+    { workspaceId: ws.id, accountId: accItau.id, companyId: companies[6].id, opportunityId: opps[6].id, description: "Carlos Silva — parcela 1/3", amount: "28000.00", installmentNo: 1, installmentTotal: 3, dueDate: daysAgo(1), status: "overdue" },
+    { workspaceId: ws.id, accountId: accItau.id, companyId: companies[6].id, opportunityId: opps[6].id, description: "Carlos Silva — parcela 2/3", amount: "28000.00", installmentNo: 2, installmentTotal: 3, dueDate: daysAhead(29), status: "open" },
+    { workspaceId: ws.id, accountId: accItau.id, companyId: companies[6].id, opportunityId: opps[6].id, description: "Carlos Silva — parcela 3/3", amount: "28000.00", installmentNo: 3, installmentTotal: 3, dueDate: daysAhead(59), status: "open" },
+    { workspaceId: ws.id, accountId: accItau.id, companyId: companies[5].id, opportunityId: opps[5].id, description: "Patrícia Ramos — saldo pós-instalação", amount: "93800.00", dueDate: daysAhead(10), status: "open" },
+  ]);
+
+  await db.insert(s.bankTransactions).values([
+    { workspaceId: ws.id, accountId: accItau.id, date: daysAgo(4), description: "TED RECEBIDA CLINICA VIDA PLENA LTDA", amount: "40200.00", reconciled: true, matchedType: "receivable" },
+    { workspaceId: ws.id, accountId: accItau.id, date: daysAgo(20), description: "DARF SIMPLES NACIONAL", amount: "-14200.00", reconciled: true, matchedType: "payable" },
+    { workspaceId: ws.id, accountId: accItau.id, date: daysAgo(1), description: "PIX RECEBIDO AUTO PECAS SILVA ME", amount: "28000.00", reconciled: false },
+    { workspaceId: ws.id, accountId: accItau.id, date: daysAgo(1), description: "COMPRA CARTAO POSTO SHELL BR", amount: "-320.00", reconciled: false },
+    { workspaceId: ws.id, accountId: accCaixa.id, date: daysAgo(2), description: "TED IMOBILIARIA CENTRAL ALUGUEL", amount: "-9800.00", reconciled: false },
+    { workspaceId: ws.id, accountId: accItau.id, date: daysAgo(3), description: "TARIFA PACOTE SERVICOS", amount: "-89.90", reconciled: false },
+  ]);
+
+  const invItems = await db.insert(s.inventoryItems).values([
+    { workspaceId: ws.id, sku: "PN-CS-665", name: "Painel Canadian Solar HiKu7 665W", quantity: 148, minStock: 60, location: "Galpão A · Prateleira 1", unitCost: "620.00" },
+    { workspaceId: ws.id, sku: "PN-JA-585", name: "Painel JA Solar DeepBlue 585W", quantity: 42, minStock: 60, location: "Galpão A · Prateleira 2", unitCost: "540.00" },
+    { workspaceId: ws.id, sku: "INV-GW-6K", name: "Inversor Growatt MIN 6000TL-X", quantity: 11, minStock: 6, location: "Galpão B · Rack 3", unitCost: "3200.00" },
+    { workspaceId: ws.id, sku: "INV-FR-82", name: "Inversor Fronius Primo 8.2-1", quantity: 3, minStock: 4, location: "Galpão B · Rack 3", unitCost: "8900.00" },
+    { workspaceId: ws.id, sku: "EST-RM-CER", name: "Kit estrutura telhado cerâmico", quantity: 380, minStock: 200, location: "Galpão A · Piso", unitCost: "45.00" },
+    { workspaceId: ws.id, sku: "CBO-6MM", name: "Cabo solar 6mm² (metro)", quantity: 1200, minStock: 800, location: "Galpão B · Bobinas", unitCost: "4.20" },
+  ]).returning();
+  await db.insert(s.stockMovements).values([
+    { workspaceId: ws.id, itemId: invItems[0].id, kind: "in", quantity: 240, reason: "Compra Aldo Solar NF 45231", createdBy: bruno.id, createdAt: daysAgo(12) },
+    { workspaceId: ws.id, itemId: invItems[0].id, kind: "out", quantity: 92, reason: "Instalação Carlos Silva", relatedOpportunityId: opps[6].id, createdBy: edu.id, createdAt: daysAgo(2) },
+    { workspaceId: ws.id, itemId: invItems[2].id, kind: "out", quantity: 1, reason: "Instalação Patrícia Ramos", relatedOpportunityId: opps[5].id, createdBy: edu.id, createdAt: daysAgo(4) },
+  ]);
+
+  await db.insert(s.invoices).values([
+    { workspaceId: ws.id, companyId: companies[5].id, opportunityId: opps[5].id, kind: "nfe", number: "1042", series: "1", amount: "134000.00", taxAmount: "8040.00", status: "issued", accessKey: "4226 0712 3456 7890 1234 5500 1000 1042 1000 1042 55", issuedAt: daysAgo(5) },
+    { workspaceId: ws.id, companyId: companies[6].id, opportunityId: opps[6].id, kind: "nfe", number: "1043", series: "1", amount: "84000.00", taxAmount: "5040.00", status: "issued", accessKey: "4226 0712 3456 7890 1234 5500 1000 1043 1000 1043 55", issuedAt: daysAgo(2) },
+    { workspaceId: ws.id, companyId: companies[1].id, kind: "nfse", number: "88", series: "1", amount: "12000.00", taxAmount: "600.00", status: "draft" },
+  ]);
+
+  const monthRef = new Date().toISOString().slice(0, 7);
+  await db.insert(s.payrollEntries).values([
+    { workspaceId: ws.id, userId: ana.id, referenceMonth: monthRef, baseSalary: "12000.00", benefits: "1500.00", deductions: "3200.00", netPay: "10300.00", status: "approved" },
+    { workspaceId: ws.id, userId: bruno.id, referenceMonth: monthRef, baseSalary: "8500.00", benefits: "1200.00", deductions: "2100.00", netPay: "7600.00", status: "approved" },
+    { workspaceId: ws.id, userId: carla.id, referenceMonth: monthRef, baseSalary: "3000.00", commissionTotal: "6540.00", benefits: "800.00", deductions: "1400.00", netPay: "8940.00", status: "draft" },
+    { workspaceId: ws.id, userId: diego.id, referenceMonth: monthRef, baseSalary: "3000.00", commissionTotal: "2520.00", benefits: "800.00", deductions: "980.00", netPay: "5340.00", status: "draft" },
+    { workspaceId: ws.id, userId: edu.id, referenceMonth: monthRef, baseSalary: "4200.00", benefits: "900.00", deductions: "1100.00", netPay: "4000.00", status: "draft" },
+  ]);
+
+  // ─── ENGENHARIA ────────────────────────────────────────────────────────────
+  await db.insert(s.engineeringDesigns).values([
+    { workspaceId: ws.id, opportunityId: opps[5].id, siteId: sites[5].id, engineerId: bruno.id, avgConsumptionKwh: 3600, targetOffsetPct: 100, irradiationKwhM2Day: "4.75", systemSizeKwp: "32.00", panelModel: "Canadian Solar HiKu7 665W", panelWatts: 665, panelQty: 48, inverterModel: "Growatt MID 30KTL3-X", inverterKw: "30.00", estimatedGenerationKwhMonth: 3776, performanceRatio: "0.80", requiredAreaM2: "162.0", status: "approved", unifilar: { modules: 48, strings: 4, breakerA: 50, cableMm2: 6 } },
+    { workspaceId: ws.id, opportunityId: opps[6].id, siteId: sites[6].id, engineerId: bruno.id, avgConsumptionKwh: 2300, targetOffsetPct: 100, irradiationKwhM2Day: "4.90", systemSizeKwp: "20.00", panelModel: "Canadian Solar HiKu7 665W", panelWatts: 665, panelQty: 30, inverterModel: "Growatt MIN 20000TL-X", inverterKw: "20.00", estimatedGenerationKwhMonth: 2450, performanceRatio: "0.81", requiredAreaM2: "101.0", status: "issued", unifilar: { modules: 30, strings: 3, breakerA: 40, cableMm2: 6 } },
+    { workspaceId: ws.id, opportunityId: opps[0].id, siteId: sites[0].id, engineerId: bruno.id, avgConsumptionKwh: 8200, targetOffsetPct: 95, irradiationKwhM2Day: "4.80", systemSizeKwp: "75.00", panelModel: "Canadian Solar HiKu7 665W", panelWatts: 665, panelQty: 113, inverterModel: "Growatt MAX 75KTL3-X", inverterKw: "75.00", estimatedGenerationKwhMonth: 8850, performanceRatio: "0.80", requiredAreaM2: "381.0", status: "draft", unifilar: { modules: 113, strings: 8, breakerA: 125, cableMm2: 10 } },
+  ]);
+
+  const [plantFazenda] = await db.insert(s.creditPlants).values([
+    { workspaceId: ws.id, siteId: sites[7].id, name: "Usina João Camargo", generatingUc: "8801234567", capacityKwp: "110.00", avgGenerationKwhMonth: 13200, modality: "shared" },
+  ]).returning();
+  await db.insert(s.creditBeneficiaries).values([
+    { plantId: plantFazenda.id, name: "Sede — João Camargo", uc: "8801234567", sharePct: "40.00", avgConsumptionKwh: 5280 },
+    { plantId: plantFazenda.id, name: "Residência do produtor", uc: "8809988776", sharePct: "20.00", avgConsumptionKwh: 2640 },
+    { plantId: plantFazenda.id, name: "Galpão de grãos", uc: "8807766554", sharePct: "25.00", avgConsumptionKwh: 3300 },
+    { plantId: plantFazenda.id, name: "Poço de irrigação", uc: "8805544332", sharePct: "15.00", avgConsumptionKwh: 1980 },
+  ]);
+
+  // ─── OPERAÇÕES ─────────────────────────────────────────────────────────────
+  await db.insert(s.serviceOrders).values([
+    { workspaceId: ws.id, number: "OS-2026-0101", kind: "installation", companyId: companies[6].id, siteId: sites[6].id, installationProjectId: instProjects[1].id, technicianId: edu.id, priority: "high", status: "scheduled", description: "Instalação 20 kWp — 30 painéis + inversor Growatt 20k", scheduledAt: daysAhead(5), checklist: [{ item: "Conferir estrutura", done: false }, { item: "Montar painéis", done: false }, { item: "Instalar inversor", done: false }, { item: "Comissionar sistema", done: false }] },
+    { workspaceId: ws.id, number: "OS-2026-0098", kind: "installation", companyId: companies[5].id, siteId: sites[5].id, installationProjectId: instProjects[0].id, technicianId: edu.id, priority: "normal", status: "in_progress", description: "Instalação 32 kWp — Patrícia Ramos", scheduledAt: daysAgo(1), startedAt: daysAgo(1), checklist: [{ item: "Conferir estrutura", done: true }, { item: "Montar painéis", done: true }, { item: "Instalar inversor", done: false }, { item: "Comissionar sistema", done: false }] },
+    { workspaceId: ws.id, number: "OS-2026-0102", kind: "survey", companyId: companies[0].id, siteId: sites[0].id, technicianId: edu.id, priority: "normal", status: "scheduled", description: "Visita técnica — Roberto Nunes (dimensionamento 75 kWp)", scheduledAt: daysAhead(2), checklist: [{ item: "Medir área de telhado", done: false }, { item: "Fotografar quadro de energia", done: false }, { item: "Avaliar sombreamento", done: false }] },
+    { workspaceId: ws.id, number: "OS-2026-0090", kind: "maintenance", companyId: companies[6].id, siteId: sites[6].id, technicianId: edu.id, priority: "low", status: "done", description: "Limpeza preventiva de módulos", scheduledAt: daysAgo(15), startedAt: daysAgo(15), completedAt: daysAgo(15), checklist: [{ item: "Limpeza dos módulos", done: true }, { item: "Verificar conexões", done: true }] },
+    { workspaceId: ws.id, number: "OS-2026-0103", kind: "repair", companyId: companies[5].id, siteId: sites[5].id, technicianId: edu.id, priority: "urgent", status: "scheduled", description: "Inversor com alarme de isolamento — verificar strings", scheduledAt: daysAhead(1), checklist: [{ item: "Medir isolamento das strings", done: false }, { item: "Inspecionar conectores MC4", done: false }] },
+  ]);
+
+  await db.insert(s.deliveryRoutes).values([
+    { workspaceId: ws.id, driverId: edu.id, date: daysAhead(1), vehicle: "Fiorino ABC-1D23", status: "planned", distanceKm: "84.0", stops: [
+      { order: 1, company: "Carlos Silva", address: "Rua do Comércio, 45 — Chapecó", items: "30 painéis + inversor 20k", done: false },
+      { order: 2, company: "Patrícia Ramos", address: "Av. Beira Mar, 900 — Florianópolis", items: "1 inversor reposição", done: false },
+    ] },
+    { workspaceId: ws.id, driverId: edu.id, date: daysAgo(2), vehicle: "HR Baú DEF-4G56", status: "done", distanceKm: "132.0", stops: [
+      { order: 1, company: "Fernanda Souza", address: "Rod. BR-101 km 210 — Palhoça", items: "Cabo solar 6mm² (600m)", done: true },
+    ] },
+  ]);
+
+  // ─── PÓS-VENDAS: usinas monitoradas + leituras + chamados ───────────────────
+  const monitored = await db.insert(s.plants).values([
+    { workspaceId: ws.id, companyId: companies[5].id, siteId: sites[5].id, installationProjectId: instProjects[0].id, name: "Patrícia Ramos", capacityKwp: "32.00", inverterBrand: "Growatt", monitoringProvider: "ShinePhone", monitoringId: "GW-VP-32", status: "online", lastReadingAt: daysAgo(0.02), todayKwh: "128.40", monthKwh: "3410.00", totalKwh: "3410.00", performanceRatio: "0.82", commissionedAt: daysAgo(4) },
+    { workspaceId: ws.id, companyId: companies[6].id, siteId: sites[6].id, installationProjectId: instProjects[1].id, name: "Carlos Silva", capacityKwp: "20.00", inverterBrand: "Growatt", monitoringProvider: "ShinePhone", monitoringId: "GW-APS-20", status: "warning", lastReadingAt: daysAgo(0.05), todayKwh: "41.20", monthKwh: "1980.00", totalKwh: "24200.00", performanceRatio: "0.68", commissionedAt: daysAgo(30) },
+    { workspaceId: ws.id, companyId: companies[7].id, siteId: sites[7].id, name: "Usina João Camargo", capacityKwp: "110.00", inverterBrand: "Fronius", monitoringProvider: "Solar.web", monitoringId: "FR-FZ-110", status: "offline", lastReadingAt: daysAgo(1.2), todayKwh: "0.00", monthKwh: "9800.00", totalKwh: "142000.00", performanceRatio: "0.79", commissionedAt: daysAgo(210) },
+  ]).returning();
+
+  // Leituras diárias dos últimos 30 dias (curva de geração realista)
+  const readings: (typeof s.plantReadings.$inferInsert)[] = [];
+  for (const p of monitored) {
+    const cap = parseFloat(p.capacityKwp);
+    const daily = cap * 4.1; // kWh/dia médio
+    for (let d = 29; d >= 0; d--) {
+      const seasonal = 0.85 + 0.3 * Math.sin((d / 30) * Math.PI);
+      const noise = 0.75 + Math.random() * 0.4;
+      const expected = daily;
+      const gen = p.status === "offline" && d === 0 ? 0 : Math.round(daily * seasonal * noise * (p.status === "warning" ? 0.8 : 1));
+      readings.push({
+        plantId: p.id, date: daysAgo(d), generationKwh: gen.toFixed(2),
+        expectedKwh: expected.toFixed(2), performanceRatio: (gen / expected).toFixed(2),
+      });
+    }
+  }
+  await db.insert(s.plantReadings).values(readings);
+
+  await db.insert(s.tickets).values([
+    { workspaceId: ws.id, companyId: companies[6].id, plantId: monitored[1].id, contactId: contacts[6].id, subject: "Geração abaixo do esperado", description: "Cliente relata que a geração caiu nos últimos dias. PR em 0,68 — possível sombreamento ou string offline.", channel: "portal", priority: "high", status: "in_progress", assignedTo: edu.id },
+    { workspaceId: ws.id, companyId: companies[7].id, plantId: monitored[2].id, contactId: contacts[7].id, subject: "Sistema offline desde ontem", description: "Inversor Fronius sem comunicação. Verificar conexão de internet/data logger no local.", channel: "phone", priority: "urgent", status: "open", assignedTo: edu.id },
+    { workspaceId: ws.id, companyId: companies[5].id, plantId: monitored[0].id, contactId: contacts[5].id, subject: "Dúvida sobre fatura de energia", description: "Cliente quer entender os créditos compensados na conta da CELESC deste mês.", channel: "whatsapp", priority: "low", status: "resolved", assignedTo: diego.id, resolvedAt: daysAgo(1) },
+  ]);
 
   console.log("Seed concluído ✔");
   console.log(`Workspace: ${ws.name} | usuários: ${users.length} | oportunidades: ${opps.length}`);

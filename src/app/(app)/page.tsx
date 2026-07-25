@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import {
-  AlertTriangle, ArrowRight, Banknote, CalendarClock, ListChecks,
+  AlertTriangle, ArrowRight, Banknote, CalendarClock, ListChecks, Megaphone,
   Phone, Settings2, Sparkles, StickyNote, Target, TrendingUp, Wrench, Zap,
 } from "lucide-react";
 import { db, schema as s } from "@/db";
@@ -48,6 +48,20 @@ export default async function DashboardPage() {
 
   const stalled = open.filter((o) => daysSince(o.opp.stageEnteredAt) > 10);
 
+  // Gráfico "De onde vêm os leads": contagem e conversão por origem
+  const bySource = new Map<string, { total: number; wonCount: number }>();
+  for (const o of opps) {
+    const key = o.opp.leadSource ?? "Sem origem";
+    const acc = bySource.get(key) ?? { total: 0, wonCount: 0 };
+    acc.total++;
+    if (o.opp.status === "won") acc.wonCount++;
+    bySource.set(key, acc);
+  }
+  const leadSources = [...bySource.entries()]
+    .map(([source, v]) => ({ source, ...v }))
+    .sort((a, b) => b.total - a.total);
+  const maxSource = Math.max(1, ...leadSources.map((l) => l.total));
+
   const kpis = [
     { label: "Pipeline aberto", value: brl(pipelineTotal), sub: `${open.length} negócios`, Icon: Target, tint: "bg-sky-50 text-sky-600" },
     { label: "Forecast ponderado", value: brl(forecast), sub: "por probabilidade da etapa", Icon: TrendingUp, tint: "bg-violet-50 text-violet-600" },
@@ -71,7 +85,7 @@ export default async function DashboardPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Bom dia, {user.name.split(" ")[0]}</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">Visão geral da operação Sansol</p>
+          <p className="text-sm text-zinc-500 mt-0.5">Visão de vendas da Sansol</p>
         </div>
         <AiButton
           action={aiAnalyzePipeline}
@@ -93,6 +107,29 @@ export default async function DashboardPage() {
             <div className="text-xs text-zinc-500 mt-0.5">{sub}</div>
           </div>
         ))}
+      </div>
+
+      <div className={`${card} p-5`}>
+        <div className="font-semibold text-sm text-zinc-800 mb-1 flex items-center gap-2">
+          <Megaphone className="h-4 w-4 text-zinc-400" />
+          De onde vêm os leads
+        </div>
+        <p className="text-xs text-zinc-400 mb-4">Todas as oportunidades por origem — a faixa escura mostra quantas viraram venda.</p>
+        <div className="space-y-2.5">
+          {leadSources.map(({ source, total, wonCount }) => (
+            <div key={source} className="flex items-center gap-3">
+              <div className="w-32 shrink-0 text-xs font-medium text-zinc-600 truncate">{source}</div>
+              <div className="flex-1 h-5 rounded-md bg-zinc-50 overflow-hidden flex">
+                <div className="h-full bg-emerald-500" style={{ width: `${(wonCount / maxSource) * 100}%` }} />
+                <div className="h-full bg-amber-300" style={{ width: `${((total - wonCount) / maxSource) * 100}%` }} />
+              </div>
+              <div className="w-24 shrink-0 text-right text-xs tabular-nums text-zinc-500">
+                {total} lead{total === 1 ? "" : "s"} · <span className="font-semibold text-emerald-700">{wonCount} venda{wonCount === 1 ? "" : "s"}</span>
+              </div>
+            </div>
+          ))}
+          {leadSources.length === 0 && <div className="text-sm text-zinc-400 py-4">Nenhum lead com origem registrada ainda.</div>}
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
