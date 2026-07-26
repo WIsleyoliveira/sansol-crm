@@ -213,6 +213,27 @@ export const installationProjects = pgTable("installation_projects", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ─── MÓDULO PRÉ-VENDAS ────────────────────────────────────────────────────────
+
+export const presalesLeads = pgTable("presales_leads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  email: text("email"),
+  channel: text("channel", {
+    enum: ["meta_ads", "google_ads", "social_organic", "prospeccao", "indicacao", "whatsapp", "outro"],
+  }).notNull().default("outro"),
+  socialNetwork: text("social_network"),
+  classification: text("classification", { enum: ["quente", "morno", "frio"] }),
+  status: text("status", { enum: ["novo", "em_conversa", "qualificado", "descartado", "convertido"] }).notNull().default("novo"),
+  ownerId: uuid("owner_id").references(() => users.id),
+  notes: text("notes"),
+  convertedOpportunityId: uuid("converted_opportunity_id").references(() => opportunities.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [index("ix_presales_ws").on(t.workspaceId)]);
+
 // ─── WhatsApp ───────────────────────────────────────────────────────────────
 
 export const whatsappConversations = pgTable("whatsapp_conversations", {
@@ -221,6 +242,7 @@ export const whatsappConversations = pgTable("whatsapp_conversations", {
   contactId: uuid("contact_id").references(() => contacts.id),
   companyId: uuid("company_id").references(() => companies.id),
   opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+  presalesLeadId: uuid("presales_lead_id").references(() => presalesLeads.id),
   phone: text("phone").notNull(),
   contactName: text("contact_name").notNull(),
   assignedTo: uuid("assigned_to").references(() => users.id),

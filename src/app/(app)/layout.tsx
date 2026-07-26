@@ -4,7 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import {
   LayoutDashboard, Target, Wrench, Users, CheckSquare, LogOut, Sun, MessageCircle, PhoneCall,
   Banknote, Landmark, ArrowLeftRight, Package, FileText, ReceiptText, Percent, FileSignature,
-  Ruler, Zap, Share2, ClipboardList, Truck, Activity, LifeBuoy, Gauge,
+  Ruler, Zap, Share2, ClipboardList, Truck, Activity, LifeBuoy, Gauge, Filter,
 } from "lucide-react";
 import { getSessionUser } from "@/lib/auth";
 import { can } from "@/lib/policy";
@@ -18,6 +18,7 @@ const navGroups: NavGroup[] = [
   {
     module: "Vendas",
     items: [
+      { href: "/pre-vendas", label: "Pré-vendas", Icon: Filter, needs: "view_pipeline" },
       { href: "/pipeline", label: "Pipeline de Vendas", Icon: Target, needs: "view_pipeline" },
       { href: "/discador", label: "Discador", Icon: PhoneCall, needs: "view_pipeline" },
       { href: "/whatsapp", label: "WhatsApp", Icon: MessageCircle, needs: "use_whatsapp" },
