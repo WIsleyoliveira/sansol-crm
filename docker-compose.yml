@@ -14,6 +14,7 @@ services:
       - EVOLUTION_API_URL=${EVOLUTION_API_URL:-}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
       - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-}
+      - PRESALES_WEBHOOK_TOKEN=${PRESALES_WEBHOOK_TOKEN:-}
     restart: unless-stopped
 
 volumes:
