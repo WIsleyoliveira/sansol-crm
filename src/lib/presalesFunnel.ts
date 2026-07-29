@@ -3,13 +3,19 @@
 // actions-presales.ts) e no cliente (para bloquear o arraste antes de mexer
 // na tela). Não importa nada do banco — só tipos simples.
 
-export type PresalesStatus =
+// União das etapas fixas — usada para checagens exaustivas de casos especiais
+// (ex.: "convertido" exige promoteToOpportunity). Colunas personalizadas
+// (ver customStagesFromSettings) têm id livre, por isso o tipo usado no resto
+// do app é `PresalesStatus = string`.
+export type BasePresalesStatus =
   | "sem_contato"
   | "em_contato"
   | "qualificacao"
   | "aguardando_vendedor"
   | "convertido"
   | "incompativel";
+
+export type PresalesStatus = string;
 
 // Cada requisito tem um teste e um rótulo explicando o que falta ao usuário.
 export type Requirement =
@@ -81,17 +87,69 @@ export const PRESALES_STAGES: readonly PresalesStage[] = [
   },
 ] as const;
 
-export function stageById(id: string): PresalesStage | undefined {
-  return PRESALES_STAGES.find((s) => s.id === id);
+export function stageById(id: string, stages: readonly PresalesStage[] = PRESALES_STAGES): PresalesStage | undefined {
+  return stages.find((s) => s.id === id);
 }
 
-export function stageLabel(id: string): string {
-  return stageById(id)?.label ?? id;
+export function stageLabel(id: string, stages: readonly PresalesStage[] = PRESALES_STAGES): string {
+  return stageById(id, stages)?.label ?? id;
 }
 
 /** Posição da etapa no funil — usada para saber o que é "avanço". */
-export function stageIndex(id: string): number {
-  return PRESALES_STAGES.findIndex((s) => s.id === id);
+export function stageIndex(id: string, stages: readonly PresalesStage[] = PRESALES_STAGES): number {
+  return stages.findIndex((s) => s.id === id);
+}
+
+// ─── Colunas personalizadas ──────────────────────────────────────────────────
+// Além das etapas fixas do funil (com regras e SLA), o workspace pode criar
+// colunas extras livres (sem campo obrigatório, sem SLA) para organizar o
+// quadro do seu jeito. Ficam em `workspaces.settings.presales.customStages`.
+
+export type CustomStage = { id: string; label: string };
+
+const MAX_CUSTOM_STAGES = 12;
+
+export function customStagesFromSettings(settings: unknown): CustomStage[] {
+  const raw = (settings as { presales?: { customStages?: unknown } } | null)?.presales?.customStages;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (c): c is CustomStage =>
+        !!c && typeof c === "object" && typeof (c as CustomStage).id === "string" && typeof (c as CustomStage).label === "string"
+    )
+    .slice(0, MAX_CUSTOM_STAGES);
+}
+
+/** Gera um id estável (slug) a partir do nome digitado pelo usuário. */
+export function slugifyStageId(label: string): string {
+  const base = label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return base || "etapa";
+}
+
+/**
+ * Monta a lista completa de etapas (fixas + personalizadas) na ordem exibida
+ * no quadro. As colunas novas entram antes de "Aguardando vendedor" — depois
+ * da qualificação, mas antes da passagem de bastão, que tem regras próprias.
+ */
+export function buildStages(custom: readonly CustomStage[]): PresalesStage[] {
+  const insertAt = PRESALES_STAGES.findIndex((st) => st.id === "aguardando_vendedor");
+  const customFull: PresalesStage[] = custom.map((c) => ({
+    id: c.id,
+    label: c.label,
+    shortLabel: c.label,
+    slaDays: null,
+    requires: [],
+  }));
+  return [
+    ...PRESALES_STAGES.slice(0, insertAt),
+    ...customFull,
+    ...PRESALES_STAGES.slice(insertAt),
+  ];
 }
 
 // ─── Validação de transição ──────────────────────────────────────────────────
@@ -146,11 +204,16 @@ export type TransitionResult = { ok: boolean; missing: string[] };
  * mesma etapa nunca é bloqueado — a exigência vale para avançar e para
  * marcar como incompatível (que pede motivo).
  */
-export function validateTransition(lead: LeadForValidation, fromStatus: string, toStatus: string): TransitionResult {
-  const to = stageById(toStatus);
+export function validateTransition(
+  lead: LeadForValidation,
+  fromStatus: string,
+  toStatus: string,
+  stages: readonly PresalesStage[] = PRESALES_STAGES
+): TransitionResult {
+  const to = stageById(toStatus, stages);
   if (!to) return { ok: false, missing: ["etapa de destino inválida"] };
 
-  const isAdvancing = stageIndex(toStatus) > stageIndex(fromStatus);
+  const isAdvancing = stageIndex(toStatus, stages) > stageIndex(fromStatus, stages);
   // Voltar etapa é livre; só "incompatível" exige motivo mesmo vindo de trás.
   if (!isAdvancing && !to.isLost) return { ok: true, missing: [] };
 
@@ -165,8 +228,12 @@ export function validateTransition(lead: LeadForValidation, fromStatus: string, 
 
 export type SlaState = "ok" | "atrasado" | "sem_sla";
 
-export function slaState(status: string, stageEnteredAt: Date | string | null): SlaState {
-  const stage = stageById(status);
+export function slaState(
+  status: string,
+  stageEnteredAt: Date | string | null,
+  stages: readonly PresalesStage[] = PRESALES_STAGES
+): SlaState {
+  const stage = stageById(status, stages);
   if (!stage || stage.slaDays == null || !stageEnteredAt) return "sem_sla";
   const days = Math.floor((Date.now() - new Date(stageEnteredAt).getTime()) / 86400000);
   return days > stage.slaDays ? "atrasado" : "ok";

@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, Plus, X } from "lucide-react";
 import { PresalesCard } from "./PresalesCard";
 import { PresalesColumnHeader } from "./PresalesColumnHeader";
 import type { BoardColumn, BoardLead, CloserOption } from "./types";
 import {
-  PRESALES_STAGES,
   stageLabel,
   validateTransition,
   type LeadForValidation,
+  type PresalesStage,
   type PresalesStatus,
 } from "@/lib/presalesFunnel";
 
@@ -22,6 +22,7 @@ type Dialog =
   | { kind: "schedule"; lead: BoardLead }
   | { kind: "handoff"; lead: BoardLead }
   | { kind: "discard"; lead: BoardLead }
+  | { kind: "newStage" }
   | null;
 
 /** Espelha no cliente a mesma regra que o servidor aplica, para dar resposta imediata. */
@@ -46,6 +47,7 @@ export function PresalesBoard({
   scheduleAction,
   discardAction,
   whatsappAction,
+  createStageAction,
 }: {
   columns: BoardColumn[];
   closers: CloserOption[];
@@ -54,12 +56,30 @@ export function PresalesBoard({
   scheduleAction: (leadId: string, formData: FormData) => Promise<ActionResult>;
   discardAction: (leadId: string, reason: string) => Promise<ActionResult>;
   whatsappAction: (leadId: string) => Promise<void>;
+  createStageAction?: (label: string) => Promise<ActionResult>;
 }) {
   // O estado local existe para o arraste responder na hora; quando o servidor
   // revalida (após mover, entregar, descartar), reabsorve os dados novos —
   // senão os totais e a taxa de conversão do cabeçalho ficariam defasados.
   const [cols, setCols] = useState(columns);
   useEffect(() => setCols(columns), [columns]);
+
+  // Espelha as colunas atuais (fixas + personalizadas) como "etapas" para o
+  // validador do cliente — assim uma coluna criada agora mesmo já funciona
+  // no arraste sem precisar conhecer a lista fixa do funil.
+  const stagesForClient: PresalesStage[] = useMemo(
+    () =>
+      cols.map((c) => ({
+        id: c.id,
+        label: c.label,
+        shortLabel: c.shortLabel,
+        slaDays: c.slaDays,
+        terminal: c.terminal,
+        isLost: c.isLost,
+        requires: c.requires,
+      })),
+    [cols]
+  );
 
   const [dragging, setDragging] = useState<BoardLead | null>(null);
   const [hoverCol, setHoverCol] = useState<string | null>(null);
@@ -114,7 +134,7 @@ export function PresalesBoard({
       return;
     }
 
-    const check = validateTransition(toValidationShape(lead), lead.status, toStatus);
+    const check = validateTransition(toValidationShape(lead), lead.status, toStatus, stagesForClient);
 
     // Incompatível exige motivo — pede no diálogo em vez de recusar seco.
     if (toStatus === "incompativel") {
@@ -215,6 +235,17 @@ export function PresalesBoard({
             </div>
           </div>
         ))}
+
+        {createStageAction && (
+          <button
+            type="button"
+            onClick={() => setDialog({ kind: "newStage" })}
+            className="w-[220px] shrink-0 self-stretch min-h-24 rounded-2xl border-2 border-dashed border-zinc-200 text-zinc-400 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50/40 transition-colors flex flex-col items-center justify-center gap-1.5 py-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          >
+            <Plus className="h-4.5 w-4.5" />
+            <span className="text-[12.5px] font-semibold">Nova coluna</span>
+          </button>
+        )}
       </div>
 
       {totalLeads === 0 && (
@@ -232,7 +263,7 @@ export function PresalesBoard({
           onClose={() => setDialog(null)}
         >
           <p className="text-[13px] text-zinc-600">
-            Para mover <b>{dialog.lead.name}</b> para <b>{stageLabel(dialog.toStatus)}</b>, complete:
+            Para mover <b>{dialog.lead.name}</b> para <b>{stageLabel(dialog.toStatus, stagesForClient)}</b>, complete:
           </p>
           <ul className="mt-3 space-y-1.5">
             {dialog.missing.map((m) => (
@@ -257,8 +288,8 @@ export function PresalesBoard({
             Etapa atual: <b className="text-zinc-700">{stageLabel(dialog.lead.status)}</b>
           </p>
           <div className="space-y-1.5">
-            {PRESALES_STAGES.filter((st) => st.id !== dialog.lead.status && st.id !== "convertido").map((st) => {
-              const check = validateTransition(toValidationShape(dialog.lead), dialog.lead.status, st.id);
+            {cols.filter((st) => st.id !== dialog.lead.status && st.id !== "convertido").map((st) => {
+              const check = validateTransition(toValidationShape(dialog.lead), dialog.lead.status, st.id, stagesForClient);
               return (
                 <button
                   key={st.id}
@@ -368,6 +399,49 @@ export function PresalesBoard({
             />
             <button className="w-full rounded-xl bg-zinc-900 text-white text-[13px] font-bold px-4 py-2.5 hover:bg-zinc-700 transition-colors">
               Marcar como incompatível
+            </button>
+          </form>
+        </Modal>
+      )}
+
+      {dialog?.kind === "newStage" && createStageAction && (
+        <Modal title="Nova coluna no quadro" onClose={() => setDialog(null)}>
+          <p className="text-[13px] text-zinc-500 mb-3">
+            Cria uma coluna extra antes de “Aguardando vendedor”, sem SLA nem dado obrigatório — útil para
+            organizar leads de um jeito próprio do time.
+          </p>
+          <form
+            action={(formData) => {
+              const name = String(formData.get("label") ?? "").trim();
+              if (!name) return;
+              setDialog(null);
+              startTransition(async () => {
+                const result = await createStageAction(name);
+                setToast(
+                  result.ok
+                    ? { tone: "ok", text: `Coluna “${name}” criada.` }
+                    : { tone: "error", text: result.error ?? "Não foi possível criar a coluna." }
+                );
+              });
+            }}
+            className="space-y-3"
+          >
+            <div>
+              <label htmlFor="new-stage-label" className="block text-[11px] font-semibold uppercase tracking-wide text-zinc-400 mb-1">
+                Nome da coluna
+              </label>
+              <input
+                id="new-stage-label"
+                name="label"
+                required
+                maxLength={40}
+                autoFocus
+                placeholder="Ex.: Aguardando visita técnica"
+                className="w-full rounded-xl border border-zinc-200 px-3.5 py-2.5 text-sm focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+              />
+            </div>
+            <button className="w-full rounded-xl bg-zinc-900 text-white text-[13px] font-bold px-4 py-2.5 hover:bg-zinc-700 transition-colors">
+              Criar coluna
             </button>
           </form>
         </Modal>

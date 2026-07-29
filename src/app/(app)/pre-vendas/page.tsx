@@ -8,7 +8,7 @@ import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/policy";
 import {
-  discardLead, handoffLead, moveLeadStatus, openWhatsappForPresalesLead, scheduleLeadTask,
+  createPresalesStage, discardLead, handoffLead, moveLeadStatus, openWhatsappForPresalesLead, scheduleLeadTask,
 } from "@/app/actions-presales";
 import { sendMessage } from "@/app/actions-whatsapp";
 import { PresalesBoard } from "@/components/presales/PresalesBoard";
@@ -16,7 +16,7 @@ import { PresalesFilters, type FilterValues } from "@/components/presales/Presal
 import type { BoardColumn, BoardLead, CloserOption } from "@/components/presales/types";
 import { brl, daysSince, relTime } from "@/lib/format";
 import { channelLabel } from "@/lib/presalesChannels";
-import { PRESALES_STAGES, slaState, stageIndex, type PresalesStatus } from "@/lib/presalesFunnel";
+import { buildStages, customStagesFromSettings, slaState, stageIndex, type PresalesStatus } from "@/lib/presalesFunnel";
 import { presalesConfig } from "@/lib/presalesConfig";
 import { estimateSystem } from "@/lib/presalesEstimate";
 import { validateTransition } from "@/lib/presalesFunnel";
@@ -129,6 +129,7 @@ async function PresalesBoardSection({
   ]);
 
   const config = presalesConfig(workspace?.settings);
+  const stages = buildStages(customStagesFromSettings(workspace?.settings));
 
   // Nomes dos vendedores para exibir "entregue a …" nos cards.
   const nameById = new Map(members.map((m) => [m.userId, m.name]));
@@ -162,7 +163,7 @@ async function PresalesBoardSection({
       const movedForward =
         payload.to != null &&
         payload.to !== "incompativel" &&
-        stageIndex(payload.to) > stageIndex(payload.from);
+        stageIndex(payload.to, stages) > stageIndex(payload.from, stages);
       if (movedForward) add(advanced, payload.from, h.leadId);
     }
   }
@@ -172,8 +173,8 @@ async function PresalesBoardSection({
 
   const allLeads: BoardLead[] = rows.map(({ lead, ownerName }) => {
     const estimate = estimateSystem(lead, config);
-    const sla = slaState(lead.status, lead.stageEnteredAt);
-    const nextStage = PRESALES_STAGES[stageIndex(lead.status) + 1];
+    const sla = slaState(lead.status, lead.stageEnteredAt, stages);
+    const nextStage = stages[stageIndex(lead.status, stages) + 1];
 
     return {
       id: lead.id,
@@ -196,21 +197,23 @@ async function PresalesBoardSection({
       estimatedKwp: estimate?.kwp ?? null,
       daysInStage: daysSince(lead.stageEnteredAt),
       sla,
-      slaDays: PRESALES_STAGES.find((st) => st.id === lead.status)?.slaDays ?? null,
+      slaDays: stages.find((st) => st.id === lead.status)?.slaDays ?? null,
       daysSinceContact: lead.lastContactAt ? daysSince(lead.lastContactAt) : null,
       hasContact: lead.lastContactAt != null,
       attemptCount: lead.attemptCount,
       hasBill: !!lead.billFileUrl || lead.billReceivedAt != null,
       lostReason: lead.lostReason,
       missingToAdvance: nextStage
-        ? validateTransition(lead, lead.status, nextStage.id).missing
+        ? validateTransition(lead, lead.status, nextStage.id, stages).missing
         : [],
     };
   });
 
   const visibleLeads = slaFilter ? allLeads.filter((l) => l.sla === slaFilter) : allLeads;
 
-  const columns: BoardColumn[] = PRESALES_STAGES.map((stage) => {
+  const customIds = new Set(customStagesFromSettings(workspace?.settings).map((c) => c.id));
+
+  const columns: BoardColumn[] = stages.map((stage) => {
     const leads = visibleLeads.filter((l) => l.status === stage.id);
     const enteredCount = entered.get(stage.id)?.size ?? 0;
     const advancedCount = advanced.get(stage.id)?.size ?? 0;
@@ -222,6 +225,8 @@ async function PresalesBoardSection({
       terminal: !!stage.terminal,
       isLost: !!stage.isLost,
       slaDays: stage.slaDays,
+      requires: [...stage.requires],
+      isCustom: customIds.has(stage.id),
       count: leads.length,
       estimatedTotalText: brl(leads.reduce((total, l) => total + l.estimatedValue, 0)),
       conversionRate:
@@ -257,6 +262,10 @@ async function PresalesBoardSection({
     "use server";
     await openWhatsappForPresalesLead(leadId);
   }
+  async function createStage(label: string) {
+    "use server";
+    return createPresalesStage(label);
+  }
 
   const pipelineTotal = visibleLeads.reduce((total, l) => total + l.estimatedValue, 0);
   const lateTotal = visibleLeads.filter((l) => l.sla === "atrasado").length;
@@ -279,6 +288,7 @@ async function PresalesBoardSection({
         scheduleAction={schedule}
         discardAction={discard}
         whatsappAction={whatsapp}
+        createStageAction={createStage}
       />
     </div>
   );

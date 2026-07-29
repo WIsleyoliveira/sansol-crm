@@ -14,7 +14,7 @@ import {
 } from "@/app/actions-presales";
 import { brl, dateBR, daysSince, kwp, relTime } from "@/lib/format";
 import { channelLabel, CLASSIFICATION_LABELS } from "@/lib/presalesChannels";
-import { PRESALES_STAGES, slaState, stageIndex, stageLabel, validateTransition } from "@/lib/presalesFunnel";
+import { buildStages, customStagesFromSettings, slaState, stageIndex, stageLabel, validateTransition } from "@/lib/presalesFunnel";
 import { presalesConfig } from "@/lib/presalesConfig";
 import { estimateSystem } from "@/lib/presalesEstimate";
 
@@ -47,14 +47,15 @@ export default async function PresalesLeadPage({ params }: { params: Promise<{ i
 
   const config = presalesConfig(workspace?.settings);
   const estimate = estimateSystem(lead, config);
-  const sla = slaState(lead.status, lead.stageEnteredAt);
-  const currentStage = PRESALES_STAGES.find((st) => st.id === lead.status);
-  const currentIdx = stageIndex(lead.status);
-  const nextStage = PRESALES_STAGES[currentIdx + 1];
+  const stages = buildStages(customStagesFromSettings(workspace?.settings));
+  const sla = slaState(lead.status, lead.stageEnteredAt, stages);
+  const currentStage = stages.find((st) => st.id === lead.status);
+  const currentIdx = stageIndex(lead.status, stages);
+  const nextStage = stages[currentIdx + 1];
   const check = nextStage
-    ? validateTransition(lead, lead.status, nextStage.id)
+    ? validateTransition(lead, lead.status, nextStage.id, stages)
     : { ok: false, missing: [] as string[] };
-  const pathStages = PRESALES_STAGES.filter((st) => !st.isLost);
+  const pathStages = stages.filter((st) => !st.isLost);
 
   const card = "rounded-2xl bg-white border border-zinc-100 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-14px_rgba(0,0,0,0.12)]";
   const cardHeader = "px-5 py-4 border-b border-zinc-100 flex items-center gap-2 font-semibold text-sm text-zinc-800";
@@ -91,7 +92,7 @@ export default async function PresalesLeadPage({ params }: { params: Promise<{ i
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">{lead.name}</h1>
             <span className="rounded-full bg-amber-100 text-amber-700 text-xs font-semibold px-3 py-1">
-              {stageLabel(lead.status)}
+              {stageLabel(lead.status, stages)}
             </span>
             {sla === "atrasado" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold px-3 py-1">
@@ -120,7 +121,7 @@ export default async function PresalesLeadPage({ params }: { params: Promise<{ i
       <div className={`${card} p-5 mb-5`}>
         <div className="flex items-center gap-0">
           {pathStages.map((st, i) => {
-            const done = currentIdx > stageIndex(st.id);
+            const done = currentIdx > stageIndex(st.id, stages);
             const current = st.id === lead.status;
             return (
               <div key={st.id} className="flex items-center flex-1 last:flex-none">
@@ -278,7 +279,7 @@ export default async function PresalesLeadPage({ params }: { params: Promise<{ i
                         {a.act.actorType === "system" ? "Sistema" : a.actorName ?? "—"} · {relTime(a.act.createdAt)}
                       </div>
                       <div className="text-[13px] text-zinc-700 mt-0.5 leading-relaxed">
-                        {payload.text ?? (payload.to ? `Movido para “${stageLabel(payload.to)}”` : a.act.type)}
+                        {payload.text ?? (payload.to ? `Movido para “${stageLabel(payload.to, stages)}”` : a.act.type)}
                       </div>
                     </div>
                   </div>

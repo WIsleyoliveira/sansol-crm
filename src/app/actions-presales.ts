@@ -7,7 +7,10 @@ import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/policy";
 import { channelLabel, type PresalesChannel } from "@/lib/presalesChannels";
-import { stageLabel, validateTransition, type PresalesStatus } from "@/lib/presalesFunnel";
+import {
+  buildStages, customStagesFromSettings, PRESALES_STAGES, slugifyStageId,
+  stageLabel, validateTransition, type PresalesStatus,
+} from "@/lib/presalesFunnel";
 import { presalesConfig } from "@/lib/presalesConfig";
 import { estimateSystem } from "@/lib/presalesEstimate";
 
@@ -18,6 +21,17 @@ async function loadLead(leadId: string, workspaceId: string) {
   const [lead] = await db.select().from(s.presalesLeads)
     .where(and(eq(s.presalesLeads.id, leadId), eq(s.presalesLeads.workspaceId, workspaceId)));
   return lead ?? null;
+}
+
+async function loadWorkspace(workspaceId: string) {
+  const [workspace] = await db.select().from(s.workspaces).where(eq(s.workspaces.id, workspaceId));
+  return workspace ?? null;
+}
+
+/** Etapas do funil deste workspace: as fixas + as colunas personalizadas criadas. */
+async function loadStages(workspaceId: string) {
+  const workspace = await loadWorkspace(workspaceId);
+  return { workspace, stages: buildStages(customStagesFromSettings(workspace?.settings)) };
 }
 
 function revalidateLead(leadId: string) {
@@ -87,11 +101,12 @@ export async function moveLeadStatus(leadId: string, toStatus: string): Promise<
     };
   }
 
-  const check = validateTransition(lead, lead.status, toStatus);
+  const { stages } = await loadStages(user.workspaceId);
+  const check = validateTransition(lead, lead.status, toStatus, stages);
   if (!check.ok) {
     return {
       ok: false,
-      error: `Para mover para “${stageLabel(toStatus)}” faltam dados no lead.`,
+      error: `Para mover para “${stageLabel(toStatus, stages)}” faltam dados no lead.`,
       missing: check.missing,
     };
   }
@@ -215,6 +230,45 @@ export async function discardLead(leadId: string, reason: string): Promise<Actio
   return { ok: true };
 }
 
+// ─── Colunas personalizadas ──────────────────────────────────────────────────
+
+/**
+ * Cria uma coluna extra no quadro (workspace todo, não só quem pediu).
+ * Fica salva em `workspaces.settings.presales.customStages` — sem SLA e sem
+ * campo obrigatório, só para organizar leads que não cabem nas etapas fixas.
+ */
+export async function createPresalesStage(label: string): Promise<ActionResult> {
+  const user = await requireUser();
+  if (!can(user.role, "manage_records")) return { ok: false, error: "Sem permissão para criar colunas." };
+
+  const trimmed = label.trim();
+  if (!trimmed) return { ok: false, error: "Informe o nome da coluna." };
+  if (trimmed.length > 40) return { ok: false, error: "Nome muito longo (máx. 40 caracteres)." };
+
+  const workspace = await loadWorkspace(user.workspaceId);
+  const settings = { ...((workspace?.settings as Record<string, unknown> | null) ?? {}) };
+  const presales = { ...((settings.presales as Record<string, unknown> | undefined) ?? {}) };
+  const existing = customStagesFromSettings(workspace?.settings);
+
+  if (existing.some((c) => c.label.toLowerCase() === trimmed.toLowerCase())) {
+    return { ok: false, error: "Já existe uma coluna com esse nome." };
+  }
+
+  const reserved = new Set(PRESALES_STAGES.map((st) => st.id));
+  const base = slugifyStageId(trimmed);
+  let id = base;
+  let n = 2;
+  while (reserved.has(id) || existing.some((c) => c.id === id)) id = `${base}_${n++}`;
+
+  presales.customStages = [...existing, { id, label: trimmed }];
+  settings.presales = presales;
+
+  await db.update(s.workspaces).set({ settings }).where(eq(s.workspaces.id, user.workspaceId));
+
+  revalidatePath("/pre-vendas");
+  return { ok: true };
+}
+
 // ─── Passagem de bastão ──────────────────────────────────────────────────────
 
 /**
@@ -230,7 +284,8 @@ export async function handoffLead(leadId: string, closerId: string): Promise<Act
   if (!lead) return { ok: false, error: "Lead não encontrado." };
   if (!closerId) return { ok: false, error: "Escolha o vendedor que vai receber o lead." };
 
-  const check = validateTransition(lead, lead.status, "aguardando_vendedor");
+  const { workspace, stages } = await loadStages(user.workspaceId);
+  const check = validateTransition(lead, lead.status, "aguardando_vendedor", stages);
   if (!check.ok) {
     return { ok: false, error: "O lead ainda não está qualificado.", missing: check.missing };
   }
@@ -239,7 +294,6 @@ export async function handoffLead(leadId: string, closerId: string): Promise<Act
     .where(and(eq(s.workspaceMembers.workspaceId, user.workspaceId), eq(s.workspaceMembers.userId, closerId)));
   if (!closer) return { ok: false, error: "Vendedor não encontrado neste workspace." };
 
-  const [workspace] = await db.select().from(s.workspaces).where(eq(s.workspaces.id, user.workspaceId));
   const config = presalesConfig(workspace?.settings);
   const estimate = estimateSystem(lead, config);
 

@@ -1,7 +1,7 @@
 // Forma dos dados que o board de pré-venda consome. A página monta isso a
 // partir do banco; os componentes de cliente não conhecem Drizzle.
 
-import type { PresalesStatus, SlaState } from "@/lib/presalesFunnel";
+import type { PresalesStatus, Requirement, SlaState } from "@/lib/presalesFunnel";
 
 export type BoardLead = {
   id: string;
@@ -48,6 +48,10 @@ export type BoardColumn = {
   terminal: boolean;
   isLost: boolean;
   slaDays: number | null;
+  /** Campos exigidos para entrar nesta etapa (vazio nas colunas personalizadas). */
+  requires: Requirement[];
+  /** Coluna criada pelo usuário (não faz parte do funil fixo do SDR). */
+  isCustom: boolean;
   /** Total de leads na coluna (após filtros). */
   count: number;
   /** Soma do valor estimado, formatada. */

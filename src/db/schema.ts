@@ -228,9 +228,9 @@ export const presalesLeads = pgTable("presales_leads", {
   }).notNull().default("outro"),
   socialNetwork: text("social_network"),
   classification: text("classification", { enum: ["quente", "morno", "frio"] }),
-  status: text("status", {
-    enum: ["sem_contato", "em_contato", "qualificacao", "aguardando_vendedor", "convertido", "incompativel"],
-  }).notNull().default("sem_contato"),
+  // Texto livre (não enum) de propósito: além das etapas fixas do funil, o
+  // workspace pode criar colunas personalizadas (ver presalesFunnel.ts).
+  status: text("status").notNull().default("sem_contato"),
   // ownerId = SDR responsável pelo lead.
   ownerId: uuid("owner_id").references(() => users.id),
   notes: text("notes"),
