@@ -1,0 +1,53 @@
+{
+  "name": "Chatbot WhatsApp - Sansol",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-chatbot",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh-1",
+      "name": "Webhook (Evolution)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        0
+      ],
+      "webhookId": "whatsapp-chatbot"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst WHITELIST = ['5591982250731']; // [] = responde a todos os contatos diretos\nconst EVOLUTION = 'http://evolution-api:8080';\nconst EVO_KEY = '7539443e08ab02320e9afd7d9b2149c9';\nconst INSTANCE = 'principal';\nconst CRM = 'http://sansol-crm:3000';\nconst WA_TOKEN = '45d0608818ca6462b540e615fc0b6f1ade82db2045b4d1dc';\nconst OLLAMA = 'http://host.docker.internal:11434';\nconst MODEL = 'llama3.1:8b';\nconst H_JSON = { 'Content-Type': 'application/json' };\nconst H_CRM = { 'Content-Type': 'application/json', 'x-webhook-token': WA_TOKEN };\nconst H_EVO = { 'Content-Type': 'application/json', apikey: EVO_KEY };\n\nconst http = async (o) => this.helpers.httpRequest(o);\n\nconst body = $input.first().json.body ?? $input.first().json;\nconst data = body.data ?? {};\nconst key = data.key ?? {};\n\n// Filtros de seguranca\nif (body.event !== 'messages.upsert') return [];\nif (key.fromMe) return [];\nconst remoteJid = String(key.remoteJid || '');\nif (!remoteJid.endsWith('@s.whatsapp.net')) return []; // ignora grupos, status, broadcast, canais\nconst phone = remoteJid.replace(/@.*/, '');\nif (WHITELIST.length && !WHITELIST.includes(phone)) return [];\nconst name = data.pushName || phone;\n\n// Texto ou audio\nlet text = data.message?.conversation ?? data.message?.extendedTextMessage?.text ?? '';\nlet mediaType = 'text';\nconst audio = data.message?.audioMessage;\nif (!text && audio) {\n  mediaType = 'audio';\n  try {\n    const media = await http({ method: 'POST', url: EVOLUTION + '/chat/getBase64FromMediaMessage/' + INSTANCE, headers: H_EVO, body: { message: data } });\n    const b64 = media.base64 || media?.data?.base64;\n    const buf = Buffer.from(b64, 'base64');\n    const trans = await this.helpers.request({ method: 'POST', url: 'http://whisper:9000/asr?task=transcribe&language=pt&output=json', formData: { audio_file: { value: buf, options: { filename: 'audio.ogg', contentType: media.mimetype || 'audio/ogg' } } } });\n    const parsed = typeof trans === 'string' ? JSON.parse(trans) : trans;\n    text = String(parsed.text || '').trim();\n  } catch (e) {\n    // Nao conseguiu transcrever: pede por escrito e encerra.\n    await http({ method: 'POST', url: EVOLUTION + '/message/sendText/' + INSTANCE, headers: H_EVO, body: { number: phone, text: 'Oi! Recebi seu áudio, mas não consegui ouvir direito por aqui 😅 Pode me mandar por mensagem escrita?' } });\n    return [{ json: { phone, error: 'audio_failed', detail: String(e.message || e) } }];\n  }\n}\nif (!text) return [];\n\n// Registra a mensagem no CRM e pega o estado da conversa\nconst inbound = await http({ method: 'POST', url: CRM + '/api/wa/inbound', headers: H_CRM, body: { phone, name, text, mediaType, providerMessageId: key.id } });\nconst conversationId = inbound.conversationId;\nlet botStatus = inbound.botStatus;\nconst history = inbound.history || [];\n\n// Retomar atendimento automatico\nconst resume = /(atendimento autom|voltar ao rob|reativar (o )?bot|ativar (o )?rob|menu inicial)/i.test(text);\nif (botStatus === 'human' && !resume) {\n  return [{ json: { phone, conversationId, skipped: 'atendimento humano ativo' } }];\n}\nif (resume && botStatus === 'human') {\n  await http({ method: 'POST', url: CRM + '/api/wa/handoff', headers: H_CRM, body: { conversationId, mode: 'auto' } });\n  botStatus = 'auto';\n}\n\n// Gera a resposta com o Ollama (JSON estruturado)\nconst system = 'Você é a Sol, atendente virtual da Sansol Energia Solar (Santa Catarina, Brasil). Fale como uma pessoa de verdade: simpática, calorosa, com linguagem simples e acessível, sem jargão técnico. Ajude o cliente com energia solar e, com naturalidade (sem parecer interrogatório), descubra a cidade dele e o valor médio da conta de luz. Nunca invente preços fechados: diga que um consultor prepara a proposta. No máximo 3 frases curtas. Se o cliente pedir para falar com um atendente/humano/pessoa, marque wants_human=true. Responda SOMENTE com o JSON pedido.';\nconst schema = { type: 'object', properties: { reply: { type: 'string' }, wants_human: { type: 'boolean' }, qualified: { type: 'boolean' }, city: { type: ['string', 'null'] }, bill: { type: ['string', 'null'] } }, required: ['reply', 'wants_human', 'qualified'] };\nconst messages = [{ role: 'system', content: system }];\nfor (const m of history) messages.push({ role: m.direction === 'in' ? 'user' : 'assistant', content: m.body });\n\nlet out;\ntry {\n  const ai = await http({ method: 'POST', url: OLLAMA + '/api/chat', headers: H_JSON, body: { model: MODEL, stream: false, format: schema, options: { temperature: 0.4 }, messages } });\n  out = JSON.parse(ai.message.content);\n} catch (e) {\n  out = { reply: 'Oi! Sou a Sol, da Sansol Energia Solar 🌞 Como posso te ajudar hoje?', wants_human: false, qualified: false };\n}\n\nlet reply = String(out.reply || '').trim();\nif (out.wants_human) {\n  await http({ method: 'POST', url: CRM + '/api/wa/handoff', headers: H_CRM, body: { conversationId, mode: 'human' } });\n  reply = 'Claro! Vou chamar um consultor da nossa equipe pra te atender por aqui. Só um instante 🙌 (Quando quiser voltar a falar comigo, é só escrever \"atendimento automático\".)';\n}\nif (!reply) reply = 'Pode me contar um pouco mais? 😊';\n\n// Envia pelo WhatsApp\nconst sent = await http({ method: 'POST', url: EVOLUTION + '/message/sendText/' + INSTANCE, headers: H_EVO, body: { number: phone, text: reply } });\nconst providerMessageId = sent?.key?.id;\n\n// Registra a resposta e salva/atualiza o contato no CRM\nawait http({ method: 'POST', url: CRM + '/api/wa/outbound', headers: H_CRM, body: { conversationId, text: reply, providerMessageId } });\nif (!out.wants_human) {\n  await http({ method: 'POST', url: CRM + '/api/contacts', headers: H_CRM, body: { phone, name, city: out.city || null, bill: out.bill || null, qualified: !!out.qualified } });\n}\n\nreturn [{ json: { phone, conversationId, reply, botStatus, wants_human: !!out.wants_human, qualified: !!out.qualified } }];\n"
+      },
+      "id": "code-1",
+      "name": "Chatbot (IA + CRM)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook (Evolution)": {
+      "main": [
+        [
+          {
+            "node": "Chatbot (IA + CRM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

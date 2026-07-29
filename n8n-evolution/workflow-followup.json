@@ -1,0 +1,56 @@
+{
+  "name": "Follow-up 3 dias - Sansol",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "sch-2",
+      "name": "A cada 1h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst WHITELIST = ['5591982250731']; // [] = responde a todos os contatos diretos\nconst EVOLUTION = 'http://evolution-api:8080';\nconst EVO_KEY = '7539443e08ab02320e9afd7d9b2149c9';\nconst INSTANCE = 'principal';\nconst CRM = 'http://sansol-crm:3000';\nconst WA_TOKEN = '45d0608818ca6462b540e615fc0b6f1ade82db2045b4d1dc';\nconst OLLAMA = 'http://host.docker.internal:11434';\nconst MODEL = 'llama3.1:8b';\nconst H_JSON = { 'Content-Type': 'application/json' };\nconst H_CRM = { 'Content-Type': 'application/json', 'x-webhook-token': WA_TOKEN };\nconst H_EVO = { 'Content-Type': 'application/json', apikey: EVO_KEY };\n\nconst http = async (o) => this.helpers.httpRequest(o);\nconst res = await http({ method: 'GET', url: CRM + '/api/wa/followups', headers: H_CRM });\nconst items = res.items || [];\nconst out = [];\nfor (const it of items) {\n  const first = String(it.name || '').split(' ')[0] || 'tudo bem';\n  let msg;\n  try {\n    const sys = 'Você é a Sol, da Sansol Energia Solar. Escreva UMA mensagem curta, calorosa e sem pressão para um cliente que parou de responder há alguns dias, retomando o papo sobre energia solar. Trate pelo primeiro nome. No máximo 2 frases. Responda só com a mensagem, sem aspas.';\n    const ai = await http({ method: 'POST', url: OLLAMA + '/api/chat', headers: H_JSON, body: { model: MODEL, stream: false, options: { temperature: 0.6 }, messages: [{ role: 'system', content: sys }, { role: 'user', content: 'Cliente: ' + it.name + '. Resumo da conversa: ' + (it.history || []).map(m => (m.direction === 'in' ? 'Cliente' : 'Sansol') + ': ' + m.body).join(' | ') }] } });\n    msg = String(ai.message?.content || '').trim();\n  } catch (e) {\n    msg = 'Oi ' + first + '! Passando pra saber se você ainda tem interesse em economizar na conta de luz com energia solar 🌞 Posso te ajudar?';\n  }\n  if (!msg) continue;\n  const sent = await http({ method: 'POST', url: EVOLUTION + '/message/sendText/' + INSTANCE, headers: H_EVO, body: { number: it.phone, text: msg } });\n  await http({ method: 'POST', url: CRM + '/api/wa/outbound', headers: H_CRM, body: { conversationId: it.conversationId, text: msg, providerMessageId: sent?.key?.id } });\n  await http({ method: 'POST', url: CRM + '/api/wa/followup-sent', headers: H_CRM, body: { conversationId: it.conversationId } });\n  out.push({ json: { phone: it.phone, msg } });\n  await new Promise(r => setTimeout(r, 4000));\n}\nreturn out.length ? out : [{ json: { note: 'sem follow-ups pendentes' } }];\n"
+      },
+      "id": "code-2",
+      "name": "Enviar follow-ups",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "A cada 1h": {
+      "main": [
+        [
+          {
+            "node": "Enviar follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

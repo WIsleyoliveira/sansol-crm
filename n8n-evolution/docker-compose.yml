@@ -1,0 +1,184 @@
+services:
+  # ─────────────────────────────────────────────
+  # Banco de dados compartilhado (n8n + Evolution)
+  # ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-net
+
+  # ─────────────────────────────────────────────
+  # Redis (cache/filas para n8n e Evolution)
+  # ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-net
+
+  # ─────────────────────────────────────────────
+  # Evolution API (WhatsApp)
+  # ─────────────────────────────────────────────
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    container_name: evolution-api
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      # --- Servidor ---
+      SERVER_URL: ${EVOLUTION_SERVER_URL}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      # --- Banco de dados (PostgreSQL) ---
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      # --- Cache (Redis) ---
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: "false"
+      # --- Webhook global (opcional, aponta pro n8n) ---
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      # --- Logs ---
+      LOG_LEVEL: ERROR
+      LOG_COLOR: "true"
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - app-net
+
+  # ─────────────────────────────────────────────
+  # n8n (automação de workflows)
+  # ─────────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "5678:5678"
+    environment:
+      # --- Banco de dados ---
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      # --- Acesso / URL ---
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      N8N_EDITOR_BASE_URL: ${N8N_WEBHOOK_URL}
+      # --- Segurança ---
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      # Permite acesso via http://localhost (necessario p/ Safari em ambiente local)
+      N8N_SECURE_COOKIE: "false"
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      # --- Execucao (modo normal: o proprio n8n processa; sem worker separado) ---
+      EXECUTIONS_MODE: regular
+      # --- Diversos ---
+      GENERIC_TIMEZONE: ${TZ}
+      TZ: ${TZ}
+      N8N_RUNNERS_ENABLED: "true"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - app-net
+
+  # ─────────────────────────────────────────────
+  # CRM Sansol (Next.js) — fonte de verdade / API
+  # ─────────────────────────────────────────────
+  sansol-crm:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: sansol-crm
+    restart: always
+    depends_on:
+      evolution-api:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    environment:
+      TZ: ${TZ}
+      # Token que o n8n usa para chamar as rotas /api do CRM
+      WA_API_TOKEN: ${WA_API_TOKEN}
+      # Envio de WhatsApp (o CRM tambem consegue enviar direto pela Evolution)
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: principal
+      # Desliga o chatbot embutido do CRM — quem responde e o n8n
+      WHATSAPP_CHATBOT: "off"
+      # IA do CRM (agentes internos) usa o Ollama do host
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: llama3.1:8b
+    volumes:
+      # Reaproveita o banco PGlite ja populado (workspace "sansol" + seed)
+      - ../pgdata:/app/pgdata
+    networks:
+      - app-net
+
+  # ─────────────────────────────────────────────
+  # Whisper (transcricao de audios do WhatsApp)
+  # ─────────────────────────────────────────────
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    container_name: whisper
+    restart: always
+    environment:
+      ASR_ENGINE: faster_whisper
+      ASR_MODEL: base
+    networks:
+      - app-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  evolution_instances:
+  n8n_data:
+
+networks:
+  app-net:
+    driver: bridge
