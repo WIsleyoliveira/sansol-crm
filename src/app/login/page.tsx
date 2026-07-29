@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const roleLabel: Record<string, string> = {
   owner: "Proprietária", admin: "Admin", manager: "Gerente comercial",
-  rep: "Vendedor(a)", installer: "Técnico de campo", viewer: "Visualização",
+  rep: "Vendedor(a)", sdr: "Pré-vendas (SDR)", installer: "Técnico de campo", viewer: "Visualização",
 };
 
 export default async function LoginPage() {

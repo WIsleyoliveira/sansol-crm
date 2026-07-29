@@ -64,16 +64,25 @@ export async function POST(req: Request) {
   const [existingLead] = await db.select().from(s.presalesLeads)
     .where(and(eq(s.presalesLeads.workspaceId, workspace.id), eq(s.presalesLeads.phone, phone)));
 
+  // O bot conversou com o cliente, então já houve contato. "qualified" (cidade
+  // + conta informadas) leva o lead para a coleta de fatura — a entrega ao
+  // vendedor ainda exige consumo em kWh, distribuidora e fatura, conferidos
+  // pelo SDR (ver src/lib/presalesFunnel.ts).
+  const now = new Date();
   let leadId: string;
   if (existingLead) {
     leadId = existingLead.id;
+    const advance = qualified && existingLead.status !== "aguardando_vendedor" && existingLead.status !== "convertido";
     await db.update(s.presalesLeads).set({
       name: existingLead.name && existingLead.name !== existingLead.phone ? existingLead.name : name,
       email: email ?? existingLead.email,
+      city: city ?? existingLead.city,
       classification: classification ?? existingLead.classification,
-      status: qualified ? "qualificado" : existingLead.status,
+      status: advance ? "qualificacao" : existingLead.status,
+      stageEnteredAt: advance ? now : existingLead.stageEnteredAt,
+      lastContactAt: now,
       notes: notes ?? existingLead.notes,
-      updatedAt: new Date(),
+      updatedAt: now,
     }).where(eq(s.presalesLeads.id, existingLead.id));
   } else {
     const [l] = await db.insert(s.presalesLeads).values({
@@ -81,9 +90,12 @@ export async function POST(req: Request) {
       name,
       phone,
       email,
+      city,
       channel: "whatsapp",
       classification,
-      status: qualified ? "qualificado" : "em_conversa",
+      status: qualified ? "qualificacao" : "em_contato",
+      lastContactAt: now,
+      attemptCount: 1,
       notes,
     }).returning();
     leadId = l.id;

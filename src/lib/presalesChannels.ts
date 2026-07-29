@@ -14,12 +14,7 @@ export function channelLabel(channel: string): string {
   return PRESALES_CHANNELS.find((c) => c.value === channel)?.label ?? channel;
 }
 
-export const PRESALES_STATUSES = [
-  { value: "novo", label: "Novo" },
-  { value: "em_conversa", label: "Em conversa" },
-  { value: "qualificado", label: "Qualificado" },
-  { value: "descartado", label: "Descartado" },
-] as const;
+// As etapas do funil ficam em src/lib/presalesFunnel.ts (com SLA e regras).
 
 export const CLASSIFICATION_LABELS: Record<string, string> = {
   quente: "Quente", morno: "Morno", frio: "Frio",

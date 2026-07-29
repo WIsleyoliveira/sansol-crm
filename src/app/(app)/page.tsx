@@ -14,7 +14,11 @@ import { aiAnalyzePipeline } from "@/app/actions-ai";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  if (!can(user.role, "view_pipeline")) redirect("/projetos");
+  // Quem não vê o funil comercial vai para a sua tela de trabalho:
+  // o SDR cai na esteira de pré-venda; o técnico, nos projetos.
+  if (!can(user.role, "view_pipeline")) {
+    redirect(can(user.role, "view_presales") ? "/pre-vendas" : "/projetos");
+  }
   const ws = eq(s.opportunities.workspaceId, user.workspaceId);
 
   const opps = await db.select({

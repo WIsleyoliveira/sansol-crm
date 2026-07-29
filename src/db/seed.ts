@@ -2,6 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { sql } from "drizzle-orm";
 import * as s from "./schema";
+import { stageLabel } from "../lib/presalesFunnel";
 
 const client = new PGlite("./pgdata");
 const db = drizzle(client, { schema: s });
@@ -23,6 +24,7 @@ async function main() {
     "payroll_entries", "invoices", "stock_movements", "inventory_items",
     "bank_transactions", "receivables", "payables", "financial_accounts",
     "contracts", "commissions",
+    "presales_handoffs", "presales_leads",
     "whatsapp_messages", "whatsapp_conversations", "whatsapp_templates",
     "installation_projects", "proposals", "site_surveys", "sites", "equipment_catalog",
     "tasks", "activities", "opportunity_stage_history", "opportunities",
@@ -46,12 +48,14 @@ async function main() {
     { email: "carla@sansol.com.br", name: "Carla Mendes", role: "rep" as const },
     { email: "diego@sansol.com.br", name: "Diego Alves", role: "rep" as const },
     { email: "edu@sansol.com.br", name: "Eduardo Lima", role: "installer" as const },
+    { email: "marina@sansol.com.br", name: "Marina Rocha", role: "sdr" as const },
+    { email: "rafael@sansol.com.br", name: "Rafael Duarte", role: "sdr" as const },
   ];
   const users = await db.insert(s.users).values(usersData.map(({ email, name }) => ({ email, name }))).returning();
   await db.insert(s.workspaceMembers).values(
     users.map((u, i) => ({ workspaceId: ws.id, userId: u.id, role: usersData[i].role }))
   );
-  const [ana, bruno, carla, diego, edu] = users;
+  const [ana, bruno, carla, diego, edu, marina, rafael] = users;
 
   // Pipelines
   const [salesPipe] = await db.insert(s.pipelines).values({
@@ -486,8 +490,157 @@ async function main() {
     { workspaceId: ws.id, companyId: companies[5].id, plantId: monitored[0].id, contactId: contacts[5].id, subject: "Dúvida sobre fatura de energia", description: "Cliente quer entender os créditos compensados na conta da CELESC deste mês.", channel: "whatsapp", priority: "low", status: "resolved", assignedTo: diego.id, resolvedAt: daysAgo(1) },
   ]);
 
+  // ─── Pré-vendas (esteira do SDR) ───────────────────────────────────────────
+  // Cobre todas as etapas, com um SLA estourado em cada uma das duas
+  // primeiras para a tela nascer com alertas visíveis.
+  const presalesData = [
+    {
+      name: "Juliana Prado", phone: "48991110001", email: "juliana.prado@email.com",
+      channel: "meta_ads" as const, classification: "quente" as const, status: "sem_contato" as const,
+      city: "Florianópolis", state: "SC", utilityCompany: "CELESC",
+      avgMonthlyConsumptionKwh: 780, avgBillAmount: "690.00",
+      ownerId: marina.id, stageEnteredAt: daysAgo(3), attemptCount: 0,
+      notes: "Preencheu formulário do anúncio de residencial. Pediu contato pela manhã.",
+    },
+    {
+      name: "Sérgio Almeida", phone: "48991110002",
+      channel: "google_ads" as const, status: "sem_contato" as const,
+      city: "São José", state: "SC", utilityCompany: "CELESC",
+      avgMonthlyConsumptionKwh: 460,
+      ownerId: rafael.id, stageEnteredAt: daysAgo(0), attemptCount: 0,
+    },
+    {
+      name: "Padaria Pão Quente", phone: "48991110003", email: "contato@paoquente.com.br",
+      channel: "indicacao" as const, classification: "morno" as const, status: "em_contato" as const,
+      city: "Palhoça", state: "SC", utilityCompany: "CELESC",
+      avgMonthlyConsumptionKwh: 2450, avgBillAmount: "2180.00",
+      ownerId: marina.id, stageEnteredAt: daysAgo(6), lastContactAt: daysAgo(5), attemptCount: 2,
+      notes: "Indicação do cliente Carlos Silva. Dono pediu para retornar depois do almoço.",
+    },
+    {
+      name: "Marcelo Tavares", phone: "48991110004",
+      channel: "social_organic" as const, socialNetwork: "Instagram",
+      status: "em_contato" as const,
+      city: "Itajaí", state: "SC", utilityCompany: "CELESC",
+      avgMonthlyConsumptionKwh: 610,
+      ownerId: rafael.id, stageEnteredAt: daysAgo(1), lastContactAt: daysAgo(1), attemptCount: 1,
+    },
+    {
+      name: "Mercado Bom Preço", phone: "48991110005", email: "financeiro@bompreco.com.br",
+      channel: "prospeccao" as const, classification: "quente" as const, status: "qualificacao" as const,
+      city: "Chapecó", state: "SC", utilityCompany: "CELESC",
+      avgMonthlyConsumptionKwh: 5800, avgBillAmount: "5120.00",
+      billFileUrl: "https://drive.google.com/file/d/exemplo-fatura-bompreco",
+      billReceivedAt: daysAgo(2),
+      ownerId: marina.id, stageEnteredAt: daysAgo(2), lastContactAt: daysAgo(2), attemptCount: 3,
+      notes: "Fatura recebida por WhatsApp. Sócio quer proposta com financiamento.",
+    },
+    {
+      name: "Clínica Vida Plena", phone: "48991110006",
+      channel: "whatsapp" as const, status: "qualificacao" as const,
+      city: "Blumenau", state: "SC", utilityCompany: "CELESC",
+      avgMonthlyConsumptionKwh: 1900,
+      ownerId: rafael.id, stageEnteredAt: daysAgo(8), lastContactAt: daysAgo(7), attemptCount: 2,
+      notes: "Falta a fatura — cobrar novamente.",
+    },
+    {
+      name: "Auto Peças Zanin", phone: "48991110007", email: "zanin@autopecas.com.br",
+      channel: "meta_ads" as const, classification: "quente" as const,
+      status: "aguardando_vendedor" as const,
+      city: "Criciúma", state: "SC", utilityCompany: "CELESC",
+      avgMonthlyConsumptionKwh: 3400, avgBillAmount: "2990.00",
+      billFileUrl: "https://drive.google.com/file/d/exemplo-fatura-zanin",
+      billReceivedAt: daysAgo(4),
+      ownerId: marina.id, closerId: carla.id, handedOffAt: daysAgo(1),
+      stageEnteredAt: daysAgo(1), lastContactAt: daysAgo(3), attemptCount: 4,
+      notes: "Qualificado: decisor identificado, quer reduzir custo da oficina.",
+    },
+    {
+      name: "Douglas Ferraz", phone: "48991110008",
+      channel: "indicacao" as const, status: "incompativel" as const,
+      city: "Lages", state: "SC", utilityCompany: "CELESC",
+      avgMonthlyConsumptionKwh: 120,
+      ownerId: rafael.id, stageEnteredAt: daysAgo(9), lastContactAt: daysAgo(9), attemptCount: 2,
+      lostReason: "Consumo muito baixo (120 kWh) — payback inviável. É inquilino, sem autorização do proprietário.",
+    },
+  ];
+  const presalesLeads = await db.insert(s.presalesLeads)
+    .values(presalesData.map((p) => ({ workspaceId: ws.id, ...p })))
+    .returning();
+
+  // Passagem de bastão já registrada para o lead entregue à Carla.
+  const zanin = presalesLeads.find((l) => l.name === "Auto Peças Zanin");
+  if (zanin) {
+    await db.insert(s.presalesHandoffs).values({
+      workspaceId: ws.id, leadId: zanin.id, sdrId: marina.id, closerId: carla.id,
+      commissionAmount: "50.00", estimatedSystemKwp: "31.48", estimatedSystemValue: "125920.00",
+      status: "pending", createdAt: daysAgo(1),
+    });
+  }
+
+  // Timeline dos leads: registra a entrada e as transições já ocorridas.
+  type PresalesAct = {
+    workspaceId: string;
+    actorId: string | null;
+    actorType: "user";
+    relatedToType: string;
+    relatedToId: string;
+    type: string;
+    payload: Record<string, string>;
+    createdAt: Date;
+  };
+  // Reconstrói o caminho completo que cada lead percorreu (sem_contato →
+  // em_contato → …), para as taxas de conversão por etapa fazerem sentido.
+  const funnelPath = ["sem_contato", "em_contato", "qualificacao", "aguardando_vendedor"];
+  const presalesActs = presalesLeads.flatMap((lead) => {
+    const acts: PresalesAct[] = [{
+      workspaceId: ws.id, actorId: lead.ownerId, actorType: "user" as const,
+      relatedToType: "presales_lead", relatedToId: lead.id,
+      type: "note", payload: { text: "Lead de pré-venda criado." },
+      createdAt: lead.createdAt,
+    }];
+
+    // Etapas intermediárias por onde o lead passou antes da atual.
+    const targetIdx = lead.status === "incompativel"
+      ? funnelPath.indexOf("em_contato")
+      : funnelPath.indexOf(lead.status);
+    const hops = targetIdx > 0 ? funnelPath.slice(0, targetIdx + 1) : [];
+
+    for (let i = 1; i < hops.length; i++) {
+      acts.push({
+        workspaceId: ws.id, actorId: lead.ownerId, actorType: "user" as const,
+        relatedToType: "presales_lead", relatedToId: lead.id,
+        type: "presales_status_changed",
+        payload: { from: hops[i - 1], to: hops[i], text: `Etapa alterada para “${stageLabel(hops[i])}”.` },
+        // Espalha as transições entre a criação e a entrada na etapa atual.
+        createdAt: new Date(lead.createdAt.getTime() + i * 3600_000),
+      });
+    }
+
+    if (lead.status === "incompativel") {
+      acts.push({
+        workspaceId: ws.id, actorId: lead.ownerId, actorType: "user" as const,
+        relatedToType: "presales_lead", relatedToId: lead.id,
+        type: "presales_status_changed",
+        payload: { from: "em_contato", to: "incompativel", text: `Lead incompatível: ${lead.lostReason ?? ""}` },
+        createdAt: lead.stageEnteredAt,
+      });
+    }
+    if (lead.status === "aguardando_vendedor") {
+      acts.push({
+        workspaceId: ws.id, actorId: lead.ownerId, actorType: "user" as const,
+        relatedToType: "presales_lead", relatedToId: lead.id,
+        type: "presales_handoff",
+        payload: { text: "Passagem de bastão registrada — lead entregue para fechamento. Comissão do SDR: R$ 50." },
+        createdAt: lead.handedOffAt ?? lead.stageEnteredAt,
+      });
+    }
+    return acts;
+  });
+  await db.insert(s.activities).values(presalesActs);
+
   console.log("Seed concluído ✔");
-  console.log(`Workspace: ${ws.name} | usuários: ${users.length} | oportunidades: ${opps.length}`);
+  console.log(`Workspace: ${ws.name} | usuários: ${users.length} | oportunidades: ${opps.length} | leads de pré-venda: ${presalesLeads.length}`);
   await client.close();
 }
 

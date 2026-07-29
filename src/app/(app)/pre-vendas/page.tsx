@@ -1,36 +1,42 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, isNotNull, lte, or, type SQL } from "drizzle-orm";
 import {
   Check, CheckCheck, Circle, Kanban as KanbanIcon, MessageCircle, Plus, Send, Target, User,
 } from "lucide-react";
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/policy";
-import { moveLeadStatus } from "@/app/actions-presales";
+import {
+  createPresalesStage, discardLead, handoffLead, moveLeadStatus, openWhatsappForPresalesLead, scheduleLeadTask,
+} from "@/app/actions-presales";
 import { sendMessage } from "@/app/actions-whatsapp";
-import { Kanban, type KanbanColumn } from "@/components/Kanban";
-import { relTime, daysSince } from "@/lib/format";
-import { channelLabel, CLASSIFICATION_LABELS } from "@/lib/presalesChannels";
+import { PresalesBoard } from "@/components/presales/PresalesBoard";
+import { PresalesFilters, type FilterValues } from "@/components/presales/PresalesFilters";
+import type { BoardColumn, BoardLead, CloserOption } from "@/components/presales/types";
+import { brl, daysSince, relTime } from "@/lib/format";
+import { channelLabel } from "@/lib/presalesChannels";
+import { buildStages, customStagesFromSettings, slaState, stageIndex, type PresalesStatus } from "@/lib/presalesFunnel";
+import { presalesConfig } from "@/lib/presalesConfig";
+import { estimateSystem } from "@/lib/presalesEstimate";
+import { validateTransition } from "@/lib/presalesFunnel";
 
-const STATUS_COLUMNS = [
-  { id: "novo", name: "Novo" },
-  { id: "em_conversa", name: "Em conversa" },
-  { id: "qualificado", name: "Qualificado" },
-  { id: "convertido", name: "Convertido", isTerminal: true },
-  { id: "descartado", name: "Descartado", isTerminal: true },
-];
+type SearchParams = {
+  view?: string; c?: string;
+  q?: string; sdr?: string; de?: string; ate?: string;
+  kwhMin?: string; kwhMax?: string; sla?: string;
+};
 
 export default async function PreVendasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; c?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const user = await requireUser();
-  if (!can(user.role, "view_pipeline")) redirect("/projetos");
+  if (!can(user.role, "view_presales")) redirect("/projetos");
 
-  const { view, c: selectedId } = await searchParams;
-  const isChatView = view === "chat";
+  const params = await searchParams;
+  const isChatView = params.view === "chat";
 
   const tabClass = (active: boolean) =>
     `inline-flex items-center gap-1.5 rounded-xl text-[13px] font-semibold px-4 py-2.5 transition-colors ${
@@ -39,10 +45,12 @@ export default async function PreVendasPage({
 
   return (
     <div className={isChatView ? "flex flex-col h-full" : "p-8"}>
-      <div className={`flex items-end justify-between ${isChatView ? "px-8 pt-8 pb-4" : "mb-6"}`}>
+      <div className={`flex flex-wrap items-end justify-between gap-4 ${isChatView ? "px-8 pt-8 pb-4" : "mb-5"}`}>
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Pré-vendas</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">Leads antes de virarem oportunidade — qualifique e converta quando estiver pronto.</p>
+          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Pré-vendas (SDR)</h1>
+          <p className="text-sm text-zinc-500 mt-0.5">
+            Esteira de qualificação — arraste o lead entre as etapas; o sistema cobra os dados que faltam.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/pre-vendas?view=kanban" className={tabClass(!isChatView)}>
@@ -59,39 +67,253 @@ export default async function PreVendasPage({
       </div>
 
       {isChatView ? (
-        <PresalesChat user={{ workspaceId: user.workspaceId }} selectedId={selectedId} />
+        <PresalesChat user={{ workspaceId: user.workspaceId }} selectedId={params.c} />
       ) : (
-        <PresalesKanban workspaceId={user.workspaceId} />
+        <PresalesBoardSection workspaceId={user.workspaceId} params={params} />
       )}
     </div>
   );
 }
 
-async function PresalesKanban({ workspaceId }: { workspaceId: string }) {
-  const leads = await db.select().from(s.presalesLeads).where(eq(s.presalesLeads.workspaceId, workspaceId));
+async function PresalesBoardSection({
+  workspaceId,
+  params,
+}: {
+  workspaceId: string;
+  params: SearchParams;
+}) {
+  // ─── Filtros em SQL (o de SLA é o único calculado depois, em JS) ──────────
+  const conditions: SQL[] = [eq(s.presalesLeads.workspaceId, workspaceId)];
 
-  const columns: KanbanColumn[] = STATUS_COLUMNS.map((col) => ({
-    id: col.id,
-    name: col.name,
-    isTerminal: col.isTerminal,
-    cards: leads
-      .filter((l) => l.status === col.id)
-      .map((l) => ({
-        id: l.id,
-        href: `/pre-vendas/${l.id}`,
-        title: l.name,
-        subtitle: `${channelLabel(l.channel)}${l.socialNetwork ? ` · ${l.socialNetwork}` : ""}`,
-        badge: l.classification ? CLASSIFICATION_LABELS[l.classification] : undefined,
-        daysInStage: daysSince(l.updatedAt),
-      })),
-  }));
+  const q = params.q?.trim();
+  if (q) {
+    const like = `%${q}%`;
+    const match = or(ilike(s.presalesLeads.name, like), ilike(s.presalesLeads.phone, like));
+    if (match) conditions.push(match);
+  }
+  if (params.sdr) conditions.push(eq(s.presalesLeads.ownerId, params.sdr));
+  if (params.de) conditions.push(gte(s.presalesLeads.createdAt, new Date(`${params.de}T00:00:00`)));
+  if (params.ate) conditions.push(lte(s.presalesLeads.createdAt, new Date(`${params.ate}T23:59:59`)));
 
-  async function move(cardId: string, toColumnId: string) {
-    "use server";
-    await moveLeadStatus(cardId, toColumnId);
+  const kwhMin = parseInt(params.kwhMin ?? "", 10);
+  const kwhMax = parseInt(params.kwhMax ?? "", 10);
+  if (!Number.isNaN(kwhMin)) conditions.push(gte(s.presalesLeads.avgMonthlyConsumptionKwh, kwhMin));
+  if (!Number.isNaN(kwhMax)) conditions.push(lte(s.presalesLeads.avgMonthlyConsumptionKwh, kwhMax));
+
+  const [rows, members, workspace, history] = await Promise.all([
+    db.select({
+      lead: s.presalesLeads,
+      ownerName: s.users.name,
+    }).from(s.presalesLeads)
+      .leftJoin(s.users, eq(s.users.id, s.presalesLeads.ownerId))
+      .where(and(...conditions))
+      .orderBy(desc(s.presalesLeads.updatedAt)),
+
+    db.select({
+      userId: s.workspaceMembers.userId,
+      role: s.workspaceMembers.role,
+      name: s.users.name,
+    }).from(s.workspaceMembers)
+      .innerJoin(s.users, eq(s.users.id, s.workspaceMembers.userId))
+      .where(eq(s.workspaceMembers.workspaceId, workspaceId)),
+
+    db.select().from(s.workspaces).where(eq(s.workspaces.id, workspaceId)).then((r) => r[0] ?? null),
+
+    // Histórico de transições — base da taxa de conversão por etapa.
+    db.select({ leadId: s.activities.relatedToId, payload: s.activities.payload })
+      .from(s.activities)
+      .where(and(
+        eq(s.activities.workspaceId, workspaceId),
+        eq(s.activities.relatedToType, "presales_lead"),
+      )),
+  ]);
+
+  const config = presalesConfig(workspace?.settings);
+  const stages = buildStages(customStagesFromSettings(workspace?.settings));
+
+  // Nomes dos vendedores para exibir "entregue a …" nos cards.
+  const nameById = new Map(members.map((m) => [m.userId, m.name]));
+
+  const sdrs: CloserOption[] = members
+    .filter((m) => m.role === "sdr" || m.role === "rep")
+    .map((m) => ({ id: m.userId, name: m.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+  const closers: CloserOption[] = members
+    .filter((m) => ["rep", "manager", "owner", "admin"].includes(m.role))
+    .map((m) => ({ id: m.userId, name: m.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+  // ─── Taxa de conversão por etapa ─────────────────────────────────────────
+  // "Entrou na etapa" = está nela agora, ou o histórico registra entrada/saída.
+  // "Avançou" = saiu dela para uma etapa posterior (descarte não conta).
+  const entered = new Map<string, Set<string>>();
+  const advanced = new Map<string, Set<string>>();
+  const add = (map: Map<string, Set<string>>, stage: string, leadId: string) => {
+    if (!map.has(stage)) map.set(stage, new Set());
+    map.get(stage)!.add(leadId);
+  };
+
+  for (const row of rows) add(entered, row.lead.status, row.lead.id);
+  for (const h of history) {
+    const payload = h.payload as { from?: string; to?: string };
+    if (payload.to) add(entered, payload.to, h.leadId);
+    if (payload.from) {
+      add(entered, payload.from, h.leadId);
+      const movedForward =
+        payload.to != null &&
+        payload.to !== "incompativel" &&
+        stageIndex(payload.to, stages) > stageIndex(payload.from, stages);
+      if (movedForward) add(advanced, payload.from, h.leadId);
+    }
   }
 
-  return <Kanban columns={columns} moveAction={move} />;
+  // ─── Monta os cards ──────────────────────────────────────────────────────
+  const slaFilter = params.sla === "ok" || params.sla === "atrasado" ? params.sla : null;
+
+  const allLeads: BoardLead[] = rows.map(({ lead, ownerName }) => {
+    const estimate = estimateSystem(lead, config);
+    const sla = slaState(lead.status, lead.stageEnteredAt, stages);
+    const nextStage = stages[stageIndex(lead.status, stages) + 1];
+
+    return {
+      id: lead.id,
+      name: lead.name,
+      phone: lead.phone,
+      status: lead.status as PresalesStatus,
+      utilityCompany: lead.utilityCompany,
+      city: lead.city,
+      state: lead.state,
+      consumptionKwh: lead.avgMonthlyConsumptionKwh,
+      billText: lead.avgBillAmount ? brl(lead.avgBillAmount) : null,
+      originLabel: `${channelLabel(lead.channel)}${lead.socialNetwork ? ` · ${lead.socialNetwork}` : ""}`,
+      channel: lead.channel,
+      classification: lead.classification,
+      ownerName,
+      ownerInitials: ownerName ? initials(ownerName) : null,
+      closerName: lead.closerId ? nameById.get(lead.closerId) ?? null : null,
+      estimatedValueText: estimate ? brl(estimate.value) : null,
+      estimatedValue: estimate?.value ?? 0,
+      estimatedKwp: estimate?.kwp ?? null,
+      daysInStage: daysSince(lead.stageEnteredAt),
+      sla,
+      slaDays: stages.find((st) => st.id === lead.status)?.slaDays ?? null,
+      daysSinceContact: lead.lastContactAt ? daysSince(lead.lastContactAt) : null,
+      hasContact: lead.lastContactAt != null,
+      attemptCount: lead.attemptCount,
+      hasBill: !!lead.billFileUrl || lead.billReceivedAt != null,
+      lostReason: lead.lostReason,
+      missingToAdvance: nextStage
+        ? validateTransition(lead, lead.status, nextStage.id, stages).missing
+        : [],
+    };
+  });
+
+  const visibleLeads = slaFilter ? allLeads.filter((l) => l.sla === slaFilter) : allLeads;
+
+  const customIds = new Set(customStagesFromSettings(workspace?.settings).map((c) => c.id));
+
+  const columns: BoardColumn[] = stages.map((stage) => {
+    const leads = visibleLeads.filter((l) => l.status === stage.id);
+    const enteredCount = entered.get(stage.id)?.size ?? 0;
+    const advancedCount = advanced.get(stage.id)?.size ?? 0;
+
+    return {
+      id: stage.id,
+      label: stage.label,
+      shortLabel: stage.shortLabel,
+      terminal: !!stage.terminal,
+      isLost: !!stage.isLost,
+      slaDays: stage.slaDays,
+      requires: [...stage.requires],
+      isCustom: customIds.has(stage.id),
+      count: leads.length,
+      estimatedTotalText: brl(leads.reduce((total, l) => total + l.estimatedValue, 0)),
+      conversionRate:
+        stage.terminal || enteredCount === 0 ? null : Math.round((advancedCount / enteredCount) * 100),
+      lateCount: leads.filter((l) => l.sla === "atrasado").length,
+      leads,
+    };
+  });
+
+  const filterValues: FilterValues = {
+    q: params.q, sdr: params.sdr, de: params.de, ate: params.ate,
+    kwhMin: params.kwhMin, kwhMax: params.kwhMax, sla: params.sla,
+  };
+  const activeFilterCount = Object.values(filterValues).filter((v) => v && String(v).trim()).length;
+
+  async function move(leadId: string, toStatus: string) {
+    "use server";
+    return moveLeadStatus(leadId, toStatus);
+  }
+  async function handoff(leadId: string, closerId: string) {
+    "use server";
+    return handoffLead(leadId, closerId);
+  }
+  async function schedule(leadId: string, formData: FormData) {
+    "use server";
+    return scheduleLeadTask(leadId, formData);
+  }
+  async function discard(leadId: string, reason: string) {
+    "use server";
+    return discardLead(leadId, reason);
+  }
+  async function whatsapp(leadId: string) {
+    "use server";
+    await openWhatsappForPresalesLead(leadId);
+  }
+  async function createStage(label: string) {
+    "use server";
+    return createPresalesStage(label);
+  }
+
+  const pipelineTotal = visibleLeads.reduce((total, l) => total + l.estimatedValue, 0);
+  const lateTotal = visibleLeads.filter((l) => l.sla === "atrasado").length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-5">
+        <Metric label="Leads no funil" value={String(visibleLeads.length)} />
+        <Metric label="Pipeline estimado" value={brl(pipelineTotal)} tone="emerald" />
+        <Metric label="Fora do SLA" value={String(lateTotal)} tone={lateTotal > 0 ? "red" : "zinc"} />
+      </div>
+
+      <PresalesFilters values={filterValues} sdrs={sdrs} activeCount={activeFilterCount} />
+
+      <PresalesBoard
+        columns={columns}
+        closers={closers}
+        moveAction={move}
+        handoffAction={handoff}
+        scheduleAction={schedule}
+        discardAction={discard}
+        whatsappAction={whatsapp}
+        createStageAction={createStage}
+      />
+    </div>
+  );
+}
+
+function initials(name: string): string {
+  return name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function Metric({
+  label,
+  value,
+  tone = "zinc",
+}: {
+  label: string;
+  value: string;
+  tone?: "zinc" | "emerald" | "red";
+}) {
+  const toneClass = tone === "emerald" ? "text-emerald-700" : tone === "red" ? "text-red-600" : "text-zinc-900";
+  return (
+    <div>
+      <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">{label}</div>
+      <div className={`text-lg font-bold tabular-nums ${toneClass}`}>{value}</div>
+    </div>
+  );
 }
 
 async function PresalesChat({ user, selectedId }: { user: { workspaceId: string }; selectedId?: string }) {
