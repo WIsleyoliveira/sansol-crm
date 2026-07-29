@@ -26,7 +26,7 @@ export const workspaceMembers = pgTable("workspace_members", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
   userId: uuid("user_id").notNull().references(() => users.id),
-  role: text("role", { enum: ["owner", "admin", "manager", "rep", "installer", "viewer"] }).notNull(),
+  role: text("role", { enum: ["owner", "admin", "manager", "rep", "sdr", "installer", "viewer"] }).notNull(),
   status: text("status").notNull().default("active"),
   joinedAt: timestamp("joined_at").notNull().defaultNow(),
 }, (t) => [uniqueIndex("uq_member").on(t.workspaceId, t.userId)]);
@@ -123,7 +123,7 @@ export const opportunityStageHistory = pgTable("opportunity_stage_history", {
 export const tasks = pgTable("tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
-  relatedToType: text("related_to_type", { enum: ["company", "contact", "opportunity", "installation_project"] }),
+  relatedToType: text("related_to_type", { enum: ["company", "contact", "opportunity", "installation_project", "presales_lead"] }),
   relatedToId: uuid("related_to_id"),
   assigneeId: uuid("assignee_id").references(() => users.id),
   createdBy: uuid("created_by").references(() => users.id),
@@ -215,6 +215,8 @@ export const installationProjects = pgTable("installation_projects", {
 
 // ─── MÓDULO PRÉ-VENDAS ────────────────────────────────────────────────────────
 
+// Esteira do SDR. As etapas, seus SLAs e os campos obrigatórios para avançar
+// ficam em src/lib/presalesFunnel.ts (fonte única, usada no servidor e na UI).
 export const presalesLeads = pgTable("presales_leads", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
@@ -226,13 +228,59 @@ export const presalesLeads = pgTable("presales_leads", {
   }).notNull().default("outro"),
   socialNetwork: text("social_network"),
   classification: text("classification", { enum: ["quente", "morno", "frio"] }),
-  status: text("status", { enum: ["novo", "em_conversa", "qualificado", "descartado", "convertido"] }).notNull().default("novo"),
+  status: text("status", {
+    enum: ["sem_contato", "em_contato", "qualificacao", "aguardando_vendedor", "convertido", "incompativel"],
+  }).notNull().default("sem_contato"),
+  // ownerId = SDR responsável pelo lead.
   ownerId: uuid("owner_id").references(() => users.id),
   notes: text("notes"),
+
+  // Dados do mercado solar coletados na qualificação
+  utilityCompany: text("utility_company"),
+  city: text("city"),
+  state: text("state"),
+  avgMonthlyConsumptionKwh: integer("avg_monthly_consumption_kwh"),
+  avgBillAmount: numeric("avg_bill_amount", { precision: 10, scale: 2 }),
+  billFileUrl: text("bill_file_url"),
+  billReceivedAt: timestamp("bill_received_at"),
+
+  // Operação do SDR / base do SLA
+  stageEnteredAt: timestamp("stage_entered_at").notNull().defaultNow(),
+  lastContactAt: timestamp("last_contact_at"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lostReason: text("lost_reason"),
+
+  // Passagem de bastão para o vendedor de fechamento
+  closerId: uuid("closer_id").references(() => users.id),
+  handedOffAt: timestamp("handed_off_at"),
+
   convertedOpportunityId: uuid("converted_opportunity_id").references(() => opportunities.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [index("ix_presales_ws").on(t.workspaceId)]);
+
+// Evento de "passagem de bastão": o SDR qualificou e entregou o lead a um
+// vendedor. Tabela própria (em vez de `commissions`, que exige opportunityId)
+// para registrar o crédito do SDR já na entrega, antes de existir a venda.
+export const presalesHandoffs = pgTable("presales_handoffs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  leadId: uuid("lead_id").notNull().references(() => presalesLeads.id),
+  sdrId: uuid("sdr_id").references(() => users.id),
+  closerId: uuid("closer_id").references(() => users.id),
+  commissionAmount: numeric("commission_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  // Fotografia da estimativa no momento da entrega (não recalcula depois).
+  estimatedSystemKwp: numeric("estimated_system_kwp", { precision: 8, scale: 2 }),
+  estimatedSystemValue: numeric("estimated_system_value", { precision: 12, scale: 2 }),
+  status: text("status", { enum: ["pending", "accepted", "returned"] }).notNull().default("pending"),
+  acceptedAt: timestamp("accepted_at"),
+  returnedAt: timestamp("returned_at"),
+  returnReason: text("return_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [
+  index("ix_presales_handoffs_ws").on(t.workspaceId),
+  index("ix_presales_handoffs_lead").on(t.leadId),
+]);
 
 // ─── WhatsApp ───────────────────────────────────────────────────────────────
 

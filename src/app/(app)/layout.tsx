@@ -18,7 +18,7 @@ const navGroups: NavGroup[] = [
   {
     module: "Vendas",
     items: [
-      { href: "/pre-vendas", label: "Pré-vendas", Icon: Filter, needs: "view_pipeline" },
+      { href: "/pre-vendas", label: "Pré-vendas (SDR)", Icon: Filter, needs: "view_presales" },
       { href: "/pipeline", label: "Pipeline de Vendas", Icon: Target, needs: "view_pipeline" },
       { href: "/discador", label: "Discador", Icon: PhoneCall, needs: "view_pipeline" },
       { href: "/whatsapp", label: "WhatsApp", Icon: MessageCircle, needs: "use_whatsapp" },
@@ -71,7 +71,7 @@ const navGroups: NavGroup[] = [
 
 const roleLabel: Record<string, string> = {
   owner: "Proprietária", admin: "Admin", manager: "Gerente",
-  rep: "Vendas", installer: "Técnico de campo", viewer: "Leitura",
+  rep: "Vendas", sdr: "Pré-vendas (SDR)", installer: "Técnico de campo", viewer: "Leitura",
 };
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {

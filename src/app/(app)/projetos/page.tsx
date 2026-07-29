@@ -1,12 +1,15 @@
+import { redirect } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/policy";
 import { moveInstallationStage } from "@/app/actions";
 import { Kanban, type KanbanColumn } from "@/components/Kanban";
 import { daysSince, kwp } from "@/lib/format";
 
 export default async function ProjetosPage() {
   const user = await requireUser();
+  if (!can(user.role, "view_installs")) redirect("/pre-vendas");
 
   const [pipe] = await db.select().from(s.pipelines)
     .where(and(eq(s.pipelines.workspaceId, user.workspaceId), eq(s.pipelines.kind, "installation")));

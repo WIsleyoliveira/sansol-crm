@@ -10,6 +10,12 @@ export function kwp(v: string | number | null | undefined): string {
   return `${n.toLocaleString("pt-BR")} kWp`;
 }
 
+export function kwh(v: string | number | null | undefined): string {
+  if (v == null) return "—";
+  const n = typeof v === "string" ? parseFloat(v) : v;
+  return `${n.toLocaleString("pt-BR")} kWh`;
+}
+
 export function daysSince(d: Date | string | null): number {
   if (!d) return 0;
   return Math.floor((Date.now() - new Date(d).getTime()) / 86400000);

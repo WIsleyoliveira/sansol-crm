@@ -48,6 +48,36 @@ export default async function NovoLeadPreVendaPage() {
             </datalist>
           </div>
         </div>
+        <div className="pt-2 text-sm font-semibold text-zinc-700">Perfil de energia (opcional agora)</div>
+        <p className="-mt-2 text-[11px] text-zinc-400">
+          Pode ficar em branco — o SDR completa na etapa de qualificação. Estes dados são exigidos
+          para entregar o lead ao vendedor.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={label}>Distribuidora</label>
+            <input name="utilityCompany" list="distribuidoras" placeholder="CELESC" className={input} />
+            <datalist id="distribuidoras">
+              <option value="CELESC" /><option value="COPEL" /><option value="RGE" />
+              <option value="CPFL" /><option value="Enel" /><option value="Cemig" />
+            </datalist>
+          </div>
+          <div>
+            <label className={label}>Consumo médio (kWh/mês)</label>
+            <input name="avgMonthlyConsumptionKwh" type="number" min="0" placeholder="450" className={input} />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="col-span-2">
+            <label className={label}>Cidade</label>
+            <input name="city" placeholder="Florianópolis" className={input} />
+          </div>
+          <div>
+            <label className={label}>UF</label>
+            <input name="state" maxLength={2} defaultValue="SC" className={input} />
+          </div>
+        </div>
+
         <div>
           <label className={label}>Observação</label>
           <textarea name="notes" rows={3} placeholder="Detalhes do contato inicial…" className={input} />
