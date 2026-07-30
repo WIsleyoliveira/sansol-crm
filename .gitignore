@@ -42,3 +42,7 @@ next-env.d.ts
 
 # banco local PGlite
 pgdata/
+pgdata.tar
+
+# lixo de teste local, não faz parte do projeto
+pgdata.corrompido.bak/
